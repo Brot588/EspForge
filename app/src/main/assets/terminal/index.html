@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>CodePad Terminal</title>
+  <link rel="stylesheet" href="xterm.css" />
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%; background: #0e1015; overflow: hidden;
+    }
+    #term { position: fixed; top: 0; left: 0; right: 0; bottom: 0; padding: 6px 8px; box-sizing: border-box; }
+    .xterm-viewport::-webkit-scrollbar { width: 6px; }
+    .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3140; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="xterm.js"></script>
+  <script src="addon-fit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

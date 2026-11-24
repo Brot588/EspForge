@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>CodePad Editor</title>
+  <link rel="stylesheet" href="style.css?v=10" />
+</head>
+<body>
+  <div id="work">
+  <div id="editor"></div>
+  <div id="preview" class="hidden">
+    <div id="preview-bar">
+      <span id="preview-name">预览</span>
+      <button id="pv-reload" type="button">刷新</button>
+      <button id="pv-close" type="button">收起</button>
+    </div>
+    <iframe id="preview-frame"></iframe>
+  </div>
+  </div>
+  <script src="vs/loader.js?v=7"></script>
+  <script src="app.js?v=11"></script>
+</body>
+</html>

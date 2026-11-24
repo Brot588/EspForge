@@ -1,0 +1,1349 @@
+package com.codepad.ide
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.codepad.ide.fs.FileNode
+import com.codepad.ide.fs.Project
+import com.codepad.ide.fs.Templates
+import com.codepad.ide.fs.Workspace
+import java.io.File
+
+private val Bg = Color(0xFF12141A)
+private val Panel = Color(0xFF171A21)
+private val PanelAlt = Color(0xFF1C2029)
+private val Stroke = Color(0xFF262B36)
+private val Accent = Color(0xFF4EA1FF)
+private val Green = Color(0xFF7CE38B)
+private val Muted = Color(0xFF8B95A5)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun IdeScreen(c: IdeController) {
+    val imeVisible = WindowInsets.isImeVisible
+    val snackbar = remember { SnackbarHostState() }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(c.toast) {
+        val t = c.toast
+        if (t != null) {
+            c.toast = null
+            snackbar.showSnackbar(t)
+        }
+    }
+
+    Scaffold(
+        containerColor = Bg,
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Panel,
+                    titleContentColor = Color(0xFFD7DCE5),
+                ),
+                title = {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = c.active?.name ?: (c.project?.name ?: "CodePad"),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (c.dirty) {
+                                Box(
+                                    Modifier
+                                        .padding(start = 6.dp)
+                                        .size(7.dp)
+                                        .background(Accent, RoundedCornerShape(50))
+                                )
+                            }
+                            if (c.active != null) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(c.activeLang?.name ?: "", fontSize = 11.sp, color = Muted)
+                            }
+                        }
+                        if (c.active != null) {
+                            Text(
+                                text = c.project?.name ?: "",
+                                fontSize = 10.sp,
+                                color = Color(0xFF5C6773),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { c.showSidebar = !c.showSidebar }) {
+                        Icon(Icons.Filled.Folder, contentDescription = "资源管理器", tint = Muted)
+                    }
+                },
+                actions = {
+                    if (c.runner.canStop) {
+                        IconButton(onClick = { c.runner.stop() }) {
+                            Icon(Icons.Filled.Stop, contentDescription = "停止", tint = Color(0xFFFF8A80))
+                        }
+                    }
+                    IconButton(onClick = { c.startDebug() }) {
+                        Icon(Icons.Filled.BugReport, contentDescription = "调试", tint = Color(0xFFB39DDB))
+                    }
+                    IconButton(onClick = { c.js("CP.requestRun()") }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "运行", tint = Green)
+                    }
+                    IconButton(onClick = { c.js("CP.requestSave()") }) {
+                        Icon(Icons.Filled.Save, contentDescription = "保存", tint = Muted)
+                    }
+                    IconButton(onClick = {
+                        c.showTerminal = !c.showTerminal
+                        c.ensureTerminal()
+                    }) {
+                        Icon(Icons.Filled.Terminal, contentDescription = "终端", tint = Muted)
+                    }
+                    IconButton(onClick = { c.openDialog("newFile", c.project?.dir) }) {
+                        Icon(Icons.Filled.Add, contentDescription = "新建文件", tint = Muted)
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多", tint = Muted)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("新建文件") },
+                                onClick = { menuOpen = false; c.openDialog("newFile", c.project?.dir) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("新建文件夹") },
+                                onClick = { menuOpen = false; c.openDialog("newFolder", c.project?.dir) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重命名当前文件") },
+                                onClick = { menuOpen = false; c.active?.let { c.openDialog("renameNode", it) } },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除当前文件") },
+                                onClick = { menuOpen = false; c.active?.let { c.openDialog("deleteNode", it) } },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("切换断点（当前行）") },
+                                onClick = { menuOpen = false; c.js("CP.toggleBreakpointAtCursor()") },
+                            )
+                            HorizontalDivider(color = Stroke)
+                            DropdownMenuItem(
+                                text = { Text("选择运行目标…") },
+                                onClick = { menuOpen = false; c.chooseRunTarget() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出工程（zip）") },
+                                onClick = { menuOpen = false; c.startExport() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导入工程（zip）") },
+                                onClick = { menuOpen = false; c.startImport() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("新建工程") },
+                                onClick = { menuOpen = false; c.openDialog("newProject") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (c.webPreviewVisible) "收起网页预览" else "网页预览（实时）") },
+                                onClick = { menuOpen = false; c.toggleWebPreviewMenu() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重载扩展") },
+                                onClick = { menuOpen = false; c.reloadExtensions() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("关于 CodePad") },
+                                onClick = { menuOpen = false; c.openDialog("about") },
+                            )
+                        }
+                    }
+                },
+            )
+        },
+    ) { pad ->
+        Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .imePadding()
+        ) {
+            TabStrip(c)
+            HorizontalDivider(color = Stroke)
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                if (c.showSidebar) {
+                    ExplorerPanel(c, Modifier.width(250.dp).fillMaxHeight())
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(Stroke))
+                }
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxHeight()) { EditorPane(c) }
+                        if (c.webPreviewVisible && c.webPreviewPath != null) {
+                            Box(Modifier.width(1.dp).fillMaxHeight().background(Stroke))
+
+                        }
+                    }
+                }
+            }
+            // 键盘弹出时把底部面板整个收起来，把空间还给编辑区
+            if (c.showTerminal && !(imeVisible && c.editorFocused)) {
+                HorizontalDivider(color = Stroke)
+                BottomDock(c, c.terminalHeight)
+            }
+            StatusBar(c)
+        }
+        }
+    }
+
+    IdeDialogs(c)
+}
+
+@Composable
+private fun TabStrip(c: IdeController) {
+    if (c.tabs.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .background(Panel)
+            .horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        c.tabs.forEach { f ->
+            val selected = f == c.active
+            Row(
+                Modifier
+                    .padding(horizontal = 2.dp, vertical = 3.dp)
+                    .background(
+                        if (selected) PanelAlt else Color.Transparent,
+                        RoundedCornerShape(6.dp),
+                    )
+                    .clickable { c.openFile(f) }
+                    .padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FileTypeIcon(f.name, false, false, 12.dp)
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = f.name,
+                    fontSize = 12.sp,
+                    color = if (selected) Color(0xFFE6EAF2) else Muted,
+                    maxLines = 1,
+                )
+                IconButton(
+                    onClick = { c.closeTab(f) },
+                    modifier = Modifier.size(20.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = null,
+                        tint = Muted,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private class DragHost {
+    var node: FileNode? by mutableStateOf(null)
+    var pos: Offset by mutableStateOf(Offset.Zero)
+    var travelled: Float by mutableStateOf(0f)
+    var panelOrigin: Offset by mutableStateOf(Offset.Zero)
+    val rects = HashMap<String, Rect>()
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ExplorerPanel(c: IdeController, modifier: Modifier) {
+    var projectMenu by remember { mutableStateOf(false) }
+    var menuFor by remember { mutableStateOf<File?>(null) }
+    val host = remember { DragHost() }
+
+    val hoverPath = if (host.node != null) {
+        host.rects.entries.firstOrNull { it.value.contains(host.pos) }?.key
+    } else null
+
+    Column(modifier.background(Panel)) {
+        // 工程切换条
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(PanelAlt)
+                .clickable { projectMenu = true }
+                .padding(start = 10.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.FolderOpen, null, tint = Color(0xFFE0B25C), modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                c.project?.name ?: "未打开工程",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFE6EAF2),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(Icons.Filled.ArrowDropDown, null, tint = Muted, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = projectMenu, onDismissRequest = { projectMenu = false }) {
+            c.projects.forEach { p ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (p.id == c.project?.id) Icons.Filled.FolderOpen else Icons.Filled.Folder,
+                                null,
+                                tint = if (p.id == c.project?.id) Accent else Muted,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(p.name, fontSize = 13.sp)
+                        }
+                    },
+                    onClick = {
+                        projectMenu = false
+                        if (p.id != c.project?.id) c.switchProject(p)
+                    },
+                )
+            }
+            HorizontalDivider(color = Stroke)
+            DropdownMenuItem(
+                text = { Text("＋ 新建工程…") },
+                onClick = { projectMenu = false; c.openDialog("newProject") },
+            )
+            DropdownMenuItem(
+                text = { Text("重命名当前工程…") },
+                onClick = { projectMenu = false; c.openDialog("renameProject") },
+            )
+            DropdownMenuItem(
+                text = { Text("删除当前工程…") },
+                onClick = { projectMenu = false; c.openDialog("deleteProject") },
+            )
+        }
+
+        // 工具条
+        Row(
+            Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "资源管理器",
+                fontSize = 10.sp,
+                color = Color(0xFF5C6773),
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { c.refreshTree() }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Refresh, null, tint = Muted, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = { c.openDialog("newFile", c.project?.dir) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Add, null, tint = Muted, modifier = Modifier.size(16.dp))
+            }
+            IconButton(onClick = { c.openDialog("newFolder", c.project?.dir) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.CreateNewFolder, null, tint = Muted, modifier = Modifier.size(15.dp))
+            }
+        }
+        HorizontalDivider(color = Stroke)
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { host.panelOrigin = it.positionInRoot() }
+        ) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                userScrollEnabled = host.node == null,
+            ) {
+                items(c.files, key = { it.file.absolutePath }) { node ->
+                    TreeRow(
+                        c = c,
+                        host = host,
+                        node = node,
+                        menuOpen = menuFor == node.file,
+                        onMenu = { menuFor = it },
+                        isDropTarget = hoverPath == node.file.absolutePath,
+                        onDropFinished = { n, moved ->
+                            if (moved < 26f) {
+                                menuFor = n.file
+                            } else {
+                                val key = host.rects.entries.firstOrNull { it.value.contains(host.pos) }?.key
+                                val t = key?.let { p -> c.files.firstOrNull { it.file.absolutePath == p } }
+                                if (t != null) {
+                                    val dest = if (t.isDir) t.file else t.file.parentFile
+                                    if (dest != null && dest.absolutePath != n.file.parentFile?.absolutePath) {
+                                        c.moveNode(n.file, dest)
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+                if (c.files.isEmpty()) {
+                    item {
+                        Text(
+                            "空工程 · 点右上角 + 新建文件",
+                            fontSize = 11.sp,
+                            color = Color(0xFF4A5261),
+                            modifier = Modifier.padding(14.dp),
+                        )
+                    }
+                }
+                item {
+                    Text(
+                        "长按拖动文件到文件夹，或松手打开菜单",
+                        fontSize = 10.sp,
+                        color = Color(0xFF3E4552),
+                        modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 14.dp),
+                    )
+                }
+            }
+
+            val drag = host.node
+            if (drag != null) {
+                val p = host.pos - host.panelOrigin
+                Row(
+                    Modifier
+                        .offset { IntOffset(p.x.toInt() + 14, p.y.toInt() - 34) }
+                        .background(Color(0xFF2B3A55), RoundedCornerShape(7.dp))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FileTypeIcon(drag.name, drag.isDir, false, 14.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(drag.name, fontSize = 11.sp, color = Color(0xFFE6EAF2))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TreeRow(
+    c: IdeController,
+    host: DragHost,
+    node: FileNode,
+    menuOpen: Boolean,
+    onMenu: (File?) -> Unit,
+    isDropTarget: Boolean,
+    onDropFinished: (FileNode, Float) -> Unit,
+) {
+    val selected = node.file == c.active
+    val isOpen = c.expanded.contains(node.file.absolutePath)
+
+    Box {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .onGloballyPositioned { host.rects[node.file.absolutePath] = it.boundsInRoot() }
+                .background(
+                    when {
+                        isDropTarget -> Color(0xFF24405F)
+                        selected -> Color(0xFF1F2937)
+                        else -> Color.Transparent
+                    }
+                )
+                .clickable {
+                    if (node.isDir) c.toggleFolder(node) else c.openFile(node.file)
+                }
+                .pointerInput(node.file.absolutePath) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { local ->
+                            val b = host.rects[node.file.absolutePath]
+                            host.node = node
+                            host.pos = (b?.topLeft ?: Offset.Zero) + local
+                            host.travelled = 0f
+                        },
+                        onDrag = { change, delta ->
+                            change.consume()
+                            host.pos += delta
+                            host.travelled += delta.getDistance()
+                        },
+                        onDragEnd = {
+                            val n = host.node
+                            val moved = host.travelled
+                            host.node = null
+                            host.travelled = 0f
+                            if (n != null) onDropFinished(n, moved)
+                        },
+                        onDragCancel = {
+                            host.node = null
+                            host.travelled = 0f
+                        },
+                    )
+                }
+                .padding(start = (6 + node.depth * 14).dp, end = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (node.isDir) {
+                Icon(
+                    imageVector = if (isOpen) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Muted,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(3.dp))
+                FileTypeIcon(node.name, true, isOpen, 15.dp)
+            } else {
+                Spacer(Modifier.width(17.dp))
+                FileTypeIcon(node.name, false, false, 15.dp)
+            }
+            Spacer(Modifier.width(7.dp))
+            Text(
+                node.name,
+                fontSize = 12.sp,
+                color = if (node.isDir) Color(0xFFD7DCE5) else Color(0xFFC2C9D6),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { onMenu(node.file) }, modifier = Modifier.size(22.dp)) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "文件操作",
+                    tint = Color(0xFF5C6773),
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(null) }) {
+            val parent = if (node.isDir) node.file else (node.file.parentFile ?: c.project!!.dir)
+            DropdownMenuItem(
+                text = { Text("新建文件") },
+                onClick = { onMenu(null); c.openDialog("newFile", parent) },
+            )
+            DropdownMenuItem(
+                text = { Text("新建文件夹") },
+                onClick = { onMenu(null); c.openDialog("newFolder", parent) },
+            )
+            if (node.isDir) {
+                DropdownMenuItem(
+                    text = { Text("展开 / 折叠") },
+                    onClick = { onMenu(null); c.toggleFolder(node) },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("移动到文件夹…") },
+                onClick = { onMenu(null); c.openDialog("moveNode", node.file) },
+            )
+            if (node.file.parentFile?.absolutePath != c.project?.dir?.absolutePath) {
+                DropdownMenuItem(
+                    text = { Text("移到上一层") },
+                    onClick = {
+                        onMenu(null)
+                        node.file.parentFile?.parentFile?.let { up -> c.moveNode(node.file, up) }
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("重命名") },
+                onClick = { onMenu(null); c.openDialog("renameNode", node.file) },
+            )
+            DropdownMenuItem(
+                text = { Text("删除", color = Color(0xFFFF8A80)) },
+                onClick = { onMenu(null); c.openDialog("deleteNode", node.file) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditorPane(c: IdeController) {
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        AndroidView(
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(if (c.active == null) 0f else 1f),
+            factory = { ctx -> createEditorWebView(ctx, c) },
+        )
+        if (c.active == null) {
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    c.project?.name ?: "CodePad",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF3C4454),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("从左侧选择文件，或长按文件夹新建", fontSize = 12.sp, color = Muted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomDock(c: IdeController, panelHeight: Int) {
+    val density = LocalDensity.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(panelHeight.dp)
+            .background(Color(0xFF0E1015))
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .background(Panel)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { change, dragAmount ->
+                        change.consume()
+                        val deltaDp = with(density) { dragAmount.toDp().value }
+                        c.terminalHeight = (c.terminalHeight - deltaDp).toInt().coerceIn(140, 640)
+                    }
+                }
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DockTab("终端", c.bottomTab == TERMINAL_TAB) { c.bottomTab = TERMINAL_TAB }
+            Spacer(Modifier.width(4.dp))
+            DockTab(
+                if (c.debugActive && c.debugPaused) "调试 ●" else "调试",
+                c.bottomTab == DEBUG_TAB,
+            ) { c.bottomTab = DEBUG_TAB }
+            Spacer(Modifier.width(4.dp))
+            DockTab("Git", c.bottomTab == GIT_TAB) {
+                c.bottomTab = GIT_TAB
+                c.gitRefresh()
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            if (c.bottomTab == TERMINAL_TAB) {
+                IconButton(onClick = { c.ensureTerminal(); c.clearTerminal() }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.Refresh, null, tint = Muted, modifier = Modifier.size(13.dp))
+                }
+                IconButton(onClick = { c.restartTerminal() }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.Terminal, null, tint = Muted, modifier = Modifier.size(13.dp))
+                }
+                IconButton(onClick = { c.showTerminal = false }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.Close, null, tint = Muted, modifier = Modifier.size(13.dp))
+                }
+            } else {
+                if (c.debugActive) {
+                    if (c.debugPaused) {
+                        DebugBtn(Icons.Filled.PlayArrow, "继续", Green) { c.debugContinue() }
+                        DebugBtn(Icons.Filled.SkipNext, "单步跳过") { c.debugStepOver() }
+                        DebugBtn(Icons.Filled.ArrowDownward, "单步进入") { c.debugStepInto() }
+                        DebugBtn(Icons.Filled.ArrowUpward, "跳出") { c.debugStepOut() }
+                    }
+                    DebugBtn(Icons.Filled.Stop, "停止", Color(0xFFFF8A80)) { c.debugStop() }
+                }
+            }
+        }
+        HorizontalDivider(color = Stroke)
+        Box(Modifier.fillMaxSize()) {
+            // 终端 WebView 始终存在，切换 Tab 不会丢会话
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                // 复用已有 WebView：键盘弹出时会把它从组合里摘掉再挂回来，不能重建，否则会话丢失
+                factory = { ctx ->
+                    val existing = c.terminalView
+                    if (existing != null) {
+                        (existing.parent as? android.view.ViewGroup)?.removeView(existing)
+                        existing
+                    } else {
+                        createTerminalWebView(ctx, c)
+                    }
+                },
+            )
+            if (c.bottomTab == DEBUG_TAB) {
+                DebugContent(c)
+            }
+            if (c.bottomTab == GIT_TAB) {
+                GitContent(c)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DockTab(label: String, active: Boolean, onClick: () -> Unit) {
+    Text(
+        text = label,
+        fontSize = 11.sp,
+        color = if (active) Color(0xFFE6EAF2) else Muted,
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(if (active) PanelAlt else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun DebugBtn(icon: ImageVector, label: String, tint: Color = Muted, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(28.dp)) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
+    }
+}
+
+@Composable
+private fun GitContent(c: IdeController) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF141821))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (c.gitRepo) {
+                Text(
+                    "⎇ ${c.gitBranch.ifBlank { "?" }}",
+                    fontSize = 11.sp,
+                    color = Color(0xFF4EA1FF),
+                    fontFamily = FontFamily.Monospace,
+                )
+                Spacer(Modifier.width(8.dp))
+                DockTab("改动 ${c.gitStatus.size}", c.gitTab == "changes") {
+                    c.gitTab = "changes"
+                    c.gitRefresh()
+                }
+                DockTab("历史", c.gitTab == "history") { c.gitShowHistory() }
+            } else {
+                Text("这个工程还不是 git 仓库", fontSize = 11.sp, color = Muted)
+            }
+            Spacer(Modifier.weight(1f))
+            if (c.gitRepo && c.gitTab == "changes" && c.gitStatus.isNotEmpty()) {
+                TextButton(onClick = { c.gitStageAll() }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("全部暂存", fontSize = 11.sp)
+                }
+            }
+            TextButton(onClick = { c.gitRefresh() }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text(if (c.gitBusy) "刷新中…" else "刷新", fontSize = 11.sp)
+            }
+            if (!c.gitRepo) {
+                TextButton(onClick = { c.gitInit() }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("初始化", fontSize = 11.sp)
+                }
+            }
+        }
+        if (!c.gitRepo) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("点右上「初始化」把这个工程变成 git 仓库", fontSize = 11.sp, color = Muted)
+            }
+            return@Column
+        }
+        HorizontalDivider(color = Stroke)
+        Row(Modifier.weight(1f)) {
+            if (c.gitTab == "history") {
+                LazyColumn(Modifier.fillMaxWidth().fillMaxHeight().padding(top = 2.dp)) {
+                    items(c.gitHistory.size) { i ->
+                        Text(
+                            c.gitHistory[i],
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFFC2C9D6),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(vertical = 3.dp),
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(Modifier.weight(0.5f).fillMaxHeight().padding(top = 2.dp)) {
+                    items(c.gitStatus.size) { i ->
+                        val line = c.gitStatus[i]
+                        val xy = line.take(2)
+                        val path = line.drop(3).trim()
+                        val staged = xy[0] != ' ' && xy[0] != '?'
+                        val untracked = xy == "??"
+                        val color = when {
+                            untracked || xy[0] == 'A' -> Color(0xFF7CE38B)
+                            xy.contains('D') -> Color(0xFFFF8A80)
+                            xy.contains('M') -> Color(0xFFE0B25C)
+                            else -> Color(0xFFC2C9D6)
+                        }
+                        val selected = c.gitSelected == path
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (selected) Color(0xFF1B202B) else Color.Transparent,
+                                    RoundedCornerShape(4.dp),
+                                )
+                                .clickable { c.gitSelectFile(path) }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(xy, fontSize = 10.sp, color = color, fontFamily = FontFamily.Monospace)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                path,
+                                fontSize = 10.sp,
+                                color = Color(0xFFC2C9D6),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (staged) {
+                                SmallAction("－") { c.gitUnstage(path) }
+                            } else {
+                                SmallAction("＋") { c.gitStage(path) }
+                            }
+                            SmallAction("↺") {
+                                c.gitDiscardPath = path
+                                c.openDialog("gitDiscard")
+                            }
+                        }
+                    }
+                }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Stroke))
+                Box(
+                    Modifier
+                        .weight(0.5f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 6.dp, top = 2.dp)
+                ) {
+                    Text(
+                        when {
+                            c.gitSelected != null && c.gitDiff.isBlank() -> "（${c.gitSelected} 没有文本差异）"
+                            c.gitDiff.isNotBlank() -> c.gitDiff
+                            c.gitLastCommit.isNotBlank() -> "最近提交：${c.gitLastCommit}\n\n点左边的文件看 diff；＋ 暂存，－ 取消暂存，↺ 丢弃"
+                            else -> "还没有任何提交"
+                        },
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF9AA4B2),
+                    )
+                }
+            }
+        }
+        if (c.gitTab == "changes") {
+            HorizontalDivider(color = Stroke)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1B202B),
+                    border = BorderStroke(1.dp, Stroke),
+                ) {
+                    BasicTextField(
+                        value = c.gitCommitMsg,
+                        onValueChange = { c.gitCommitMsg = it },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color(0xFFE6EAF2)),
+                        cursorBrush = SolidColor(Color(0xFF4EA1FF)),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+                        decorationBox = { inner ->
+                            Box(Modifier.heightIn(min = 18.dp)) {
+                                if (c.gitCommitMsg.isEmpty()) {
+                                    Text("提交信息（提交已暂存的改动）", fontSize = 11.sp, color = Muted)
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { c.gitCommit() },
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                ) {
+                    Text("提交", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmallAction(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(24.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF9AA4B2))
+    }
+}
+@Composable
+private fun DebugContent(c: IdeController) {
+    if (!c.debugActive) {
+        Box(
+            Modifier.fillMaxSize().background(Color(0xFF141821)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "点顶栏 🐞 开始调试",
+                    fontSize = 12.sp,
+                    color = Color(0xFFC2C9D6),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Python / JavaScript / C / Rust · 点行号设断点",
+                    fontSize = 11.sp,
+                    color = Muted,
+                )
+                val name = c.active?.name ?: ""
+                if (name.endsWith(".c") || name.endsWith(".rs")) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "C / Rust 首次调试要解压工具链，需要稍等一下",
+                        fontSize = 10.sp,
+                        color = Muted,
+                    )
+                }
+            }
+        }
+        return
+    }
+    Row(Modifier.fillMaxSize().background(Color(0xFF141821))) {
+        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text("变量", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            LazyColumn {
+                items(c.debugVars) { pair ->
+                    Row {
+                        Text(
+                            pair.first,
+                            fontSize = 11.sp,
+                            color = Color(0xFF82AAFF),
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        Text(" = ", fontSize = 11.sp, color = Muted)
+                        Text(
+                            pair.second,
+                            fontSize = 11.sp,
+                            color = Color(0xFFC2C9D6),
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        Box(Modifier.width(1.dp).fillMaxHeight().background(Stroke))
+        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text("调用栈", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            LazyColumn {
+                items(c.debugStack) { frame ->
+                    Text(
+                        frame,
+                        fontSize = 11.sp,
+                        color = Color(0xFFC2C9D6),
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusBar(c: IdeController) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .background(Color(0xFF0E1015))
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(if (c.dirty) Color(0xFFE0B25C) else Green, RoundedCornerShape(50)))
+        Spacer(Modifier.width(6.dp))
+        Text(c.statusLine, fontSize = 10.sp, color = Muted, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        Text(c.project?.name ?: "", fontSize = 10.sp, color = Color(0xFF4A5261), maxLines = 1)
+        Spacer(Modifier.width(10.dp))
+        Text(c.activeLang?.name ?: "—", fontSize = 10.sp, color = Color(0xFF4A5261))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IdeDialogs(c: IdeController) {
+    val d = c.dialog ?: return
+
+    var field by remember(d, c.dialogTarget, c.project?.id) {
+        val initial = when (d) {
+            "renameNode" -> c.dialogTarget?.name ?: ""
+            "renameProject" -> c.project?.name ?: ""
+            else -> ""
+        }
+        mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length)))
+    }
+    var template by remember(d) { mutableStateOf(if (d == "newProject") Templates.MULTI else Templates.EMPTY) }
+
+    when (d) {
+        "gitDiscard" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("丢弃改动") },
+            text = { Text("确定丢弃「${c.gitDiscardPath}」的改动吗？未跟踪的文件会被删除，不可恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val p = c.gitDiscardPath
+                    c.closeDialog()
+                    if (p != null) c.gitDiscard(p)
+                }) { Text("丢弃", color = Color(0xFFFF6B6B)) }
+            },
+            dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+        )
+
+        "runTarget" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("选择运行目标") },
+            text = {
+                val projectPath = c.active?.let { com.codepad.ide.run.CToolchain.cmakeRootOf(it) }?.absolutePath
+                    ?: (c.project?.dir?.absolutePath ?: "")
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("build 目录里的可执行文件：", fontSize = 11.sp, color = Muted)
+                    Spacer(Modifier.height(6.dp))
+                    com.codepad.ide.run.CToolchain.lastCmakeTargets.forEach { f ->
+                        val selected = com.codepad.ide.run.CToolchain.preferredTarget(projectPath) == f.name
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    c.setRunTarget(f.name)
+                                    c.closeDialog()
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selected, onClick = {
+                                c.setRunTarget(f.name)
+                                c.closeDialog()
+                            })
+                            Spacer(Modifier.width(4.dp))
+                            Text(f.name, fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { c.closeDialog() }) { Text("关闭") } },
+        )
+
+        "about" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("关于 CodePad") },
+            text = {
+                Column {
+                    Text("CodePad 3.6", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "口袋里的 Android IDE：\n" +
+                            "· 工程 = 文件夹，支持整包 zip 导入导出\n" +
+                            "· Monaco 编辑器 + clangd 补全 + 原生 PTY 终端\n" +
+                            "· C / C++ / Rust / Python / JavaScript / Shell 运行\n" +
+                            "· C / C++ / Rust / Python / JS 断点调试\n" +
+                            "· 内置 clang、rustc+cargo、cmake",
+                        fontSize = 12.sp,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { c.closeDialog() }) { Text("好") } },
+        )
+
+        "deleteProject" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("删除工程") },
+            text = { Text("确定删除工程「${c.project?.name}」及其全部文件吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    c.deleteCurrentProject()
+                    c.closeDialog()
+                }) { Text("删除", color = Color(0xFFFF6B6B)) }
+            },
+            dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+        )
+
+        "deleteNode" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("删除") },
+            text = {
+                val target = c.dialogTarget
+                Text(
+                    if (target?.isDirectory == true)
+                        "确定删除文件夹「${target.name}」及其中所有文件吗？"
+                    else
+                        "确定删除「${target?.name ?: ""}」吗？"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    c.dialogTarget?.let { c.deleteNode(it) }
+                    c.closeDialog()
+                }) { Text("删除", color = Color(0xFFFF6B6B)) }
+            },
+            dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+        )
+
+        "newProject" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("新建工程") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = field,
+                        onValueChange = { field = it },
+                        singleLine = true,
+                        label = { Text("工程名称") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("模板", fontSize = 11.sp, color = Muted)
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        TemplateChip("空工程", template == Templates.EMPTY) { template = Templates.EMPTY }
+                        TemplateChip("C", template == Templates.C) { template = Templates.C }
+                        TemplateChip("Python", template == Templates.PYTHON) { template = Templates.PYTHON }
+                TemplateChip("Rust", template == Templates.RUST) { template = Templates.RUST }
+                TemplateChip("C/CMake", template == Templates.CMAKE) { template = Templates.CMAKE }
+                TemplateChip("C++/CMake", template == Templates.CPP) { template = Templates.CPP }
+                TemplateChip("Web", template == Templates.WEB) { template = Templates.WEB }
+                        TemplateChip("多语言", template == Templates.MULTI) { template = Templates.MULTI }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    c.createProject(field.text, template)
+                    c.closeDialog()
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+        )
+
+        "renameProject" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("重命名工程") },
+            text = {
+                OutlinedTextField(
+                    value = field,
+                    onValueChange = { field = it },
+                    singleLine = true,
+                    label = { Text("工程名称") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    c.renameCurrentProject(field.text)
+                    c.closeDialog()
+                }) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+        )
+
+        "moveNode" -> {
+            val root = c.project?.dir
+            val folders = c.allFolders()
+            var selected by remember(d, c.dialogTarget, c.project?.id) {
+                mutableStateOf(
+                    folders.firstOrNull { it != c.dialogTarget?.parentFile } ?: folders.firstOrNull()
+                )
+            }
+            AlertDialog(
+                onDismissRequest = { c.closeDialog() },
+                title = { Text("移动到文件夹") },
+                text = {
+                    Column(
+                        Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        folders.forEach { f ->
+                            val label = if (f == root) "/ · 工程根目录" else Workspace.relativePath(root ?: f, f)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selected = f }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = selected == f, onClick = { selected = f })
+                                Spacer(Modifier.width(4.dp))
+                                Text(label, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val dst = selected
+                        val src = c.dialogTarget
+                        if (dst != null && src != null) c.moveNode(src, dst)
+                        c.closeDialog()
+                    }) { Text("移动") }
+                },
+                dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+            )
+        }
+
+        else -> {
+            val title = when (d) {
+                "newFile" -> "新建文件"
+                "newFolder" -> "新建文件夹"
+                "renameNode" -> "重命名"
+                else -> "输入"
+            }
+            val label = when (d) {
+                "newFolder" -> "文件夹名称"
+                else -> "名称"
+            }
+            AlertDialog(
+                onDismissRequest = { c.closeDialog() },
+                title = { Text(title) },
+                text = {
+                    OutlinedTextField(
+                        value = field,
+                        onValueChange = { field = it },
+                        singleLine = true,
+                        label = { Text(label) },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            applyNodeDialog(c, d, field.text)
+                        }),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { applyNodeDialog(c, d, field.text) }) { Text("确定") }
+                },
+                dismissButton = { TextButton(onClick = { c.closeDialog() }) { Text("取消") } },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TemplateChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label, fontSize = 11.sp) })
+}
+
+private fun applyNodeDialog(c: IdeController, dialog: String, text: String) {
+    when (dialog) {
+        "newFile" -> c.createNode(c.dialogTarget ?: c.project?.dir ?: return, text, false)
+        "newFolder" -> c.createNode(c.dialogTarget ?: c.project?.dir ?: return, text, true)
+        "renameNode" -> c.dialogTarget?.let { c.renameNode(it, text) }
+    }
+    c.closeDialog()
+}
