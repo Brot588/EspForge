@@ -81,11 +81,23 @@ APK 约 226MB，因为内置了完整的 C/C++/Rust 工具链。
 
 ## 构建
 
+需要 **JDK 17**、**Android SDK 35**、**Gradle 8.10.2**。
+
 ```powershell
+# 方式一：已装好 JDK / SDK
+$env:JAVA_HOME   = "C:\path\to\jdk17"
+$env:ANDROID_HOME = "C:\path\to\android-sdk"
+gradle assembleDebug
+
+# 方式二：把工具链放进 ./toolchain（jdk17/ + android-sdk/ + gradle-8.10.2/）
+pwsh -File .\build.ps1
+
+# 方式三：指定工具链目录
+$env:CODEPAD_TOOLCHAIN = "D:\path\to\toolchain"
 pwsh -File .\build.ps1
 ```
 
-需要 JDK 17、Android SDK 35、Gradle 8.10.2。
+`build.ps1` 只做两件事：找到工具链、设好环境变量后交给 Gradle，不含任何硬编码路径。
 
 ### ⚠️ 仓库不含内置工具链
 
