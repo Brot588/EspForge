@@ -1,6 +1,6 @@
 # CodePad
 
-> 把 VS Code 的体验搬进 Android 平板：Monaco 编辑器 + 内置 C/C++/Rust/Python/JS 工具链，离线编译、真 GDB 调试、Git 面板、HTML 实时预览。
+> 把 VS Code 的**编辑器**体验搬进 Android 平板：Monaco（VS Code 同款内核）+ 内置 C/C++/Rust/Python/JS 工具链，离线编译、真 GDB 调试、Git 面板、HTML 实时预览。
 
 一个**完全离线**的 Android 平板 IDE。不需要网络、不需要 Termux、不需要 root：
 工具链随 APK 一起装好，打开就能写代码、编译、下断点、提交 Git。
