@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
@@ -68,6 +69,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -185,6 +187,13 @@ fun IdeScreen(c: IdeController) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { c.toggleSearch() }) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = "搜索",
+                            tint = if (c.searchOpen) Green else Muted,
+                        )
+                    }
                     if (c.runner.canStop) {
                         IconButton(onClick = { c.runner.stop() }) {
                             Icon(Icons.Filled.Stop, contentDescription = "停止", tint = Color(0xFFFF8A80))
@@ -255,6 +264,10 @@ fun IdeScreen(c: IdeController) {
                                 onClick = { menuOpen = false; c.toggleWebPreviewMenu() },
                             )
                             DropdownMenuItem(
+                                text = { Text("设置…") },
+                                onClick = { menuOpen = false; c.openDialog("settings") },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("重载扩展") },
                                 onClick = { menuOpen = false; c.reloadExtensions() },
                             )
@@ -279,7 +292,11 @@ fun IdeScreen(c: IdeController) {
             HorizontalDivider(color = Stroke)
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 if (c.showSidebar) {
+                    if (c.searchOpen) {
+                        SearchPanel(c, Modifier.width(300.dp).fillMaxHeight())
+                    } else {
                     ExplorerPanel(c, Modifier.width(250.dp).fillMaxHeight())
+                    }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(Stroke))
                 }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -1078,6 +1095,96 @@ private fun StatusBar(c: IdeController) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun SearchPanel(c: IdeController, modifier: Modifier = Modifier) {
+    Column(modifier.background(Panel).padding(horizontal = 8.dp, vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("全局搜索", fontSize = 11.sp, color = Muted, modifier = Modifier.weight(1f))
+            TextButton(onClick = { c.searchOpen = false }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text("关闭", fontSize = 10.sp)
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF1B202B),
+            border = BorderStroke(1.dp, Stroke),
+        ) {
+            BasicTextField(
+                value = c.searchQuery,
+                onValueChange = { c.searchQuery = it },
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color(0xFFE6EAF2)),
+                cursorBrush = SolidColor(Color(0xFF4EA1FF)),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                decorationBox = { inner ->
+                    Box(Modifier.heightIn(min = 18.dp)) {
+                        if (c.searchQuery.isEmpty()) Text("要搜什么？", fontSize = 12.sp, color = Muted)
+                        inner()
+                    }
+                },
+            )
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { c.runSearch() }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(if (c.searchBusy) "搜索中…" else "搜索", fontSize = 11.sp)
+            }
+            TextButton(
+                onClick = {
+                    c.searchCase = !c.searchCase
+                    if (c.searchQuery.isNotBlank()) c.runSearch()
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp),
+            ) {
+                Text(if (c.searchCase) "Aa 区分大小写" else "Aa 忽略大小写", fontSize = 10.sp, color = Muted)
+            }
+        }
+        if (c.searchSummary.isNotBlank()) {
+            Text(c.searchSummary, fontSize = 10.sp, color = Muted, modifier = Modifier.padding(vertical = 2.dp))
+        }
+        HorizontalDivider(color = Stroke)
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            items(c.searchResults.size) { i ->
+                val h = c.searchResults[i]
+                val rel = h.path.removePrefix((c.project?.dir?.absolutePath ?: "") + "/")
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { c.openHit(h) }
+                        .padding(vertical = 4.dp, horizontal = 2.dp)
+                ) {
+                    Text(
+                        rel + ":" + h.line,
+                        fontSize = 10.sp,
+                        color = Color(0xFF4EA1FF),
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        h.text,
+                        fontSize = 10.sp,
+                        color = Color(0xFFC2C9D6),
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingStepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 12.sp, color = Color(0xFFD7DCE5), modifier = Modifier.weight(1f))
+        TextButton(onClick = onMinus, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("−", fontSize = 16.sp) }
+        Text(value, fontSize = 12.sp, color = Color(0xFF4EA1FF), fontFamily = FontFamily.Monospace)
+        TextButton(onClick = onPlus, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+", fontSize = 16.sp) }
+    }
+}
+
+@Composable
 private fun IdeDialogs(c: IdeController) {
     val d = c.dialog ?: return
 
@@ -1092,6 +1199,43 @@ private fun IdeDialogs(c: IdeController) {
     var template by remember(d) { mutableStateOf(if (d == "newProject") Templates.MULTI else Templates.EMPTY) }
 
     when (d) {
+        "settings" -> AlertDialog(
+            onDismissRequest = { c.closeDialog() },
+            title = { Text("设置") },
+            text = {
+                Column {
+                    SettingStepper(
+                        "编辑器字号",
+                        c.editorFontSize.toString(),
+                        { c.changeEditorFontSize(c.editorFontSize - 1) },
+                        { c.changeEditorFontSize(c.editorFontSize + 1) },
+                    )
+                    Text("缩进宽度", fontSize = 12.sp, color = Color(0xFFD7DCE5))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        listOf(2, 4, 8).forEach { n ->
+                            FilterChip(
+                                selected = c.editorTabSize == n,
+                                onClick = { c.changeTabSize(n) },
+                                label = { Text("$n", fontSize = 11.sp) },
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("自动换行", fontSize = 12.sp, color = Color(0xFFD7DCE5), modifier = Modifier.weight(1f))
+                        Switch(checked = c.editorWordWrap, onCheckedChange = { c.changeWordWrap(it) })
+                    }
+                    SettingStepper(
+                        "终端字号",
+                        c.terminalFontSize.toString(),
+                        { c.changeTerminalFontSize(c.terminalFontSize - 0.5f) },
+                        { c.changeTerminalFontSize(c.terminalFontSize + 0.5f) },
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { c.closeDialog() }) { Text("完成") } },
+        )
+
         "gitDiscard" -> AlertDialog(
             onDismissRequest = { c.closeDialog() },
             title = { Text("丢弃改动") },

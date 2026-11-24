@@ -86,6 +86,7 @@ class IdeController(private val activity: MainActivity) {
                 editorReady = true
                 sendActiveToEditor()
                 ensureWebPreview(active)
+                applyEditorSettings()
                 statusLine = "编辑器就绪"
             }
         }
@@ -1265,6 +1266,7 @@ class IdeController(private val activity: MainActivity) {
     fun ensureTerminal() {
         if (::session.isInitialized && session.running) return
         session = newSession()
+        loadSettings()
         if (terminalReady) startSession()
     }
 
@@ -1349,6 +1351,7 @@ class IdeController(private val activity: MainActivity) {
 
     fun onTerminalReady() {
         terminalReady = true
+        applyTerminalSettings()
         ui {
             val pending = pendingTerminal.toByteArray()
             pendingTerminal.reset()
@@ -1417,6 +1420,116 @@ class IdeController(private val activity: MainActivity) {
     }
 
     // --------------------------------------------------------------- 编辑器
+
+    // ---------------------------------------------------------------- 设置
+
+    private val settingsPrefs
+        get() = App.ctx.getSharedPreferences("codepad-settings", android.content.Context.MODE_PRIVATE)
+
+    var editorFontSize by mutableStateOf(13)
+    var editorTabSize by mutableStateOf(4)
+    var editorWordWrap by mutableStateOf(false)
+    var terminalFontSize by mutableStateOf(12.5f)
+    var settingsOpen by mutableStateOf(false)
+
+    private fun loadSettings() {
+        val sp = settingsPrefs
+        editorFontSize = sp.getInt("editorFont", 13)
+        editorTabSize = sp.getInt("tabSize", 4)
+        editorWordWrap = sp.getBoolean("wordWrap", false)
+        terminalFontSize = sp.getFloat("terminalFont", 12.5f)
+    }
+
+    fun applyEditorSettings() {
+        js(
+            "CP.applySettings({fontSize:" + editorFontSize +
+                ",tabSize:" + editorTabSize +
+                ",wordWrap:" + editorWordWrap + "})"
+        )
+    }
+
+    fun applyTerminalSettings() {
+        termJs("CP.setFontSize(" + terminalFontSize + ")")
+    }
+
+    fun changeEditorFontSize(v: Int) {
+        editorFontSize = v.coerceIn(9, 28)
+        settingsPrefs.edit().putInt("editorFont", editorFontSize).apply()
+        applyEditorSettings()
+    }
+
+    fun changeTabSize(v: Int) {
+        editorTabSize = v.coerceIn(1, 8)
+        settingsPrefs.edit().putInt("tabSize", editorTabSize).apply()
+        applyEditorSettings()
+    }
+
+    fun changeWordWrap(v: Boolean) {
+        editorWordWrap = v
+        settingsPrefs.edit().putBoolean("wordWrap", v).apply()
+        applyEditorSettings()
+    }
+
+    fun changeTerminalFontSize(v: Float) {
+        terminalFontSize = v.coerceIn(9f, 26f)
+        settingsPrefs.edit().putFloat("terminalFont", terminalFontSize).apply()
+        applyTerminalSettings()
+    }
+
+    // ------------------------------------------------------------ 全局搜索
+
+    var searchOpen by mutableStateOf(false)
+    var searchQuery by mutableStateOf("")
+    var searchCase by mutableStateOf(false)
+    var searchBusy by mutableStateOf(false)
+    var searchResults by mutableStateOf<List<com.codepad.ide.fs.SearchService.Hit>>(emptyList())
+    var searchSummary by mutableStateOf("")
+
+    fun toggleSearch() {
+        searchOpen = !searchOpen
+        if (searchOpen) showSidebar = true
+    }
+
+    fun runSearch() {
+        val root = project?.dir ?: return
+        val q = searchQuery.trim()
+        if (q.isEmpty()) {
+            searchResults = emptyList()
+            searchSummary = ""
+            return
+        }
+        searchBusy = true
+        Thread({
+            val hits = try {
+                com.codepad.ide.fs.SearchService.search(root, q, searchCase)
+            } catch (t: Throwable) {
+                emptyList()
+            }
+            ui {
+                searchResults = hits
+                searchSummary = when {
+                    hits.isEmpty() -> "没有匹配"
+                    hits.size >= 300 -> "300+ 处（已截断）"
+                    else -> "${hits.size} 处匹配"
+                }
+                searchBusy = false
+            }
+        }, "search").start()
+    }
+
+    fun openHit(h: com.codepad.ide.fs.SearchService.Hit) {
+        val f = File(h.path)
+        if (!f.isFile) {
+            toast = "文件不存在了"
+            return
+        }
+        open(f)
+        val line = h.line
+        val col = h.col
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            js("CP.gotoLine($line,$col)")
+        }, 220)
+    }
 
     fun showIme() {
         try {

@@ -68,6 +68,12 @@
   });
 
   window.CP = {
+  setFontSize: function (px) {
+    try {
+      term.options.fontSize = px;
+      if (typeof fit === 'function') fit();
+    } catch (e) {}
+  },
     term: {
       write: function (b64) { term.write(b64ToBytes(b64)); },
       clear: function () { term.clear(); },

@@ -14,8 +14,8 @@ android {
         applicationId = "com.codepad.ide"
         minSdk = 26
         targetSdk = 28
-        versionCode = 33
-        versionName = "4.2"
+        versionCode = 34
+        versionName = "4.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

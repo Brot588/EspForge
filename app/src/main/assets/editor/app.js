@@ -504,6 +504,26 @@
 
     reloadPreview: function () { refreshPreview(); },
 
+    gotoLine: function (line, col) {
+      var m = editor.getModel();
+      if (!m) return;
+      var ln = Math.max(1, Math.min(line, m.getLineCount()));
+      editor.setPosition({ lineNumber: ln, column: Math.max(1, col || 1) });
+      editor.revealLineInCenter(ln);
+      editor.focus();
+    },
+
+    applySettings: function (s) {
+      try {
+        var o = {};
+        if (s && s.fontSize) o.fontSize = s.fontSize;
+        if (s && s.tabSize) o.tabSize = s.tabSize;
+        if (s && typeof s.wordWrap === 'boolean') o.wordWrap = s.wordWrap ? 'on' : 'off';
+        editor.updateOptions(o);
+        editor.layout();
+      } catch (e) {}
+    },
+
     setReadOnly: function (v) {
       if (editor) editor.updateOptions({ readOnly: !!v });
     }
