@@ -17,6 +17,8 @@ class EditorBridge(private val host: Host) {
         fun openPath(path: String)
         fun webPreviewUrl(): String
         fun setPreviewVisible(visible: Boolean)
+        fun openPathAt(path: String, line: Int, col: Int)
+        fun status(message: String)
     }
 
     @JavascriptInterface
@@ -51,6 +53,12 @@ class EditorBridge(private val host: Host) {
 
     @JavascriptInterface
     fun setPreviewVisible(visible: Boolean) = host.setPreviewVisible(visible)
+
+    @JavascriptInterface
+    fun openPathAt(path: String, line: Int, col: Int) = host.openPathAt(path, line, col)
+
+    @JavascriptInterface
+    fun status(message: String) = host.status(message)
 }
 
 class TerminalBridge(

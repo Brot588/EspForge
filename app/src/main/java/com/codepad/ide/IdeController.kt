@@ -129,6 +129,24 @@ class IdeController(private val activity: MainActivity) {
 
         override fun webPreviewUrl(): String = this@IdeController.webPreviewUrl()
 
+        override fun openPathAt(path: String, line: Int, col: Int) {
+            ui {
+                val f = File(path)
+                if (!f.isFile) {
+                    toast = "定义所在文件打不开: " + path
+                    return@ui
+                }
+                open(f)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    js("CP.gotoLine($line,$col)")
+                }, 260)
+            }
+        }
+
+        override fun status(message: String) {
+            ui { statusLine = message }
+        }
+
         override fun setPreviewVisible(visible: Boolean) {
             ui { webPreviewVisible = visible }
         }
@@ -1121,8 +1139,8 @@ class IdeController(private val activity: MainActivity) {
         }, "lsp-req").start()
     }
 
-    private fun replyLsp(id: Int, resp: JSONObject?) {
-        val json = resp?.toString() ?: "null"
+    private fun replyLsp(id: Int, resp: Any?) {
+        val json = if (resp == null) "null" else resp.toString()
         ui {
             editorView?.evaluateJavascript("CP.lspDone($id, " + JSONObject.quote(json) + ")", null)
         }

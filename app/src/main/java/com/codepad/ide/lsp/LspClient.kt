@@ -21,7 +21,7 @@ class LspClient(
     private var process: Process? = null
     private var out: OutputStream? = null
     private var reader: Thread? = null
-    private val pending = ConcurrentHashMap<Int, (JSONObject?) -> Unit>()
+    private val pending = ConcurrentHashMap<Int, (Any?) -> Unit>()
     private val nextId = AtomicInteger(1)
     private val writeLock = Any()
     private val opened = HashSet<String>()
@@ -123,8 +123,10 @@ class LspClient(
                     )
                 } else if (msg.has("id")) {
                     val id = msg.optInt("id", -1)
-                    val res = msg.optJSONObject("result")
-                    if (res == null && !msg.optBoolean("__ok", false)) {
+                    // result 可能是对象、数组（如 definition 的 Location[]）或 null，不能只取对象
+                    val raw = msg.opt("result")
+                    val res: Any? = if (raw == null || raw === JSONObject.NULL) null else raw
+                    if (res == null) {
                         android.util.Log.i("CodePadLsp", "resp without result: " + msg.toString().take(240))
                     }
                     pending.remove(id)?.invoke(res)
@@ -159,7 +161,7 @@ class LspClient(
         }
     }
 
-    fun request(method: String, params: JSONObject, cb: (JSONObject?) -> Unit): Int {
+    fun request(method: String, params: JSONObject, cb: (Any?) -> Unit): Int {
         val id = nextId.getAndIncrement()
         pending[id] = cb
         send(

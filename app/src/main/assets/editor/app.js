@@ -504,6 +504,34 @@
 
     reloadPreview: function () { refreshPreview(); },
 
+    gotoDefinition: function () {
+      var pos = editor.getPosition();
+      if (!pos || !currentAbs) { return; }
+      var params = {
+        textDocument: { uri: fileUri(currentAbs) },
+        position: { line: pos.lineNumber - 1, character: pos.column - 1 }
+      };
+      var lang = CP.languageId ? CP.languageId() : 'c';
+      lspCall('textDocument/definition', params, 6000, lang).then(function (res) {
+        var loc = Array.isArray(res) ? res[0] : res;
+        if (!loc) {
+          if (window.Android && Android.status) Android.status('没找到定义（文件可能不在编译数据库里）');
+          return;
+        }
+        var uri = loc.uri || loc.targetUri || '';
+        var range = loc.range || loc.targetRange;
+        if (!range || !uri) { return; }
+        var path = decodeURIComponent(uri.replace('file://', ''));
+        var line = range.start.line + 1;
+        var col = range.start.character + 1;
+        if (path === currentAbs) {
+          CP.gotoLine(line, col);
+        } else if (window.Android && Android.openPathAt) {
+          Android.openPathAt(path, line, col);
+        }
+      });
+    },
+
     gotoLine: function (line, col) {
       var m = editor.getModel();
       if (!m) return;
