@@ -63,7 +63,16 @@
 
 ## 下载
 
-见 [Releases](../../releases)。只提供 **arm64-v8a**，要求 Android 8.0+。
+**[⬇ 下载最新版（Releases）](https://github.com/Brot588/CodePad/releases/latest)**
+
+只提供 **arm64-v8a**，要求 Android 8.0+。
+
+`v4.2` 的 APK 校验信息：
+
+```
+CodePad-4.2-arm64.apk   226.4 MB (237,354,383 字节)
+SHA-256: 0d43fe58167b79a950b5aeca5af6ea546b0ada7a72d4c6414a42fd6c908080b1
+```
 
 APK 约 226MB，因为内置了完整的 C/C++/Rust 工具链。
 
