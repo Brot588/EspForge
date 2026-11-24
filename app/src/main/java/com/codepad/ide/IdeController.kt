@@ -1450,6 +1450,16 @@ class IdeController(private val activity: MainActivity) {
     var terminalFontSize by mutableStateOf(12.5f)
     var settingsOpen by mutableStateOf(false)
 
+    /** 从 PackageManager 读真实版本号，避免硬编码落后 */
+    val appVersion: String by lazy {
+        try {
+            val pi = App.ctx.packageManager.getPackageInfo(App.ctx.packageName, 0)
+            pi.versionName ?: "?"
+        } catch (_: Throwable) {
+            "?"
+        }
+    }
+
     private fun loadSettings() {
         val sp = settingsPrefs
         editorFontSize = sp.getInt("editorFont", 13)

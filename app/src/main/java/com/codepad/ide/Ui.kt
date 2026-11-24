@@ -1289,7 +1289,7 @@ private fun IdeDialogs(c: IdeController) {
             title = { Text("关于 CodePad") },
             text = {
                 Column {
-                    Text("CodePad 3.6", fontWeight = FontWeight.SemiBold)
+                    Text("CodePad ${c.appVersion}", fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "口袋里的 Android IDE：\n" +
