@@ -1027,6 +1027,31 @@ private fun DebugContent(c: IdeController) {
         }
         return
     }
+    if (!c.debugPaused) {
+        Box(
+            Modifier.fillMaxSize().background(Color(0xFF141821)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("正在准备调试…", fontSize = 12.sp, color = Color(0xFFC2C9D6))
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (c.debugPrep.isBlank()) c.debugReason else c.debugPrep,
+                    fontSize = 11.sp,
+                    color = Color(0xFF82AAFF),
+                    fontFamily = FontFamily.Monospace,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "首次调试需要解压工具链（约 230MB），几十秒内完成",
+                    fontSize = 10.sp,
+                    color = Muted,
+                )
+            }
+        }
+        return
+    }
+
     Row(Modifier.fillMaxSize().background(Color(0xFF141821))) {
         Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text("变量", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
@@ -1049,6 +1074,9 @@ private fun DebugContent(c: IdeController) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (pair.second.trim().matches(Regex("^-?\\d{7,}$"))) {
+                            Text("(可能未初始化) ", fontSize = 9.sp, color = Color(0xFF6B7280))
+                        }
                     }
                 }
             }

@@ -510,6 +510,7 @@ class IdeController(private val activity: MainActivity) {
     var debugPaused by mutableStateOf(false)
         private set
     var debugReason by mutableStateOf("")
+    var debugPrep by mutableStateOf("")
         private set
     var debugLine by mutableStateOf(0)
         private set
@@ -593,7 +594,10 @@ class IdeController(private val activity: MainActivity) {
             breakpoints,
             rust,
             publish = { json -> DebugBridge.publish(json) },
-            log = { msg -> appendTerminal(msg + "\r\n") },
+            log = { msg ->
+                appendTerminal(msg + "\r\n")
+                ui { if (!debugPaused) debugPrep = msg }
+            },
         )
     }
     private fun runPyDebug(path: String, bps: String) {
@@ -649,6 +653,7 @@ class IdeController(private val activity: MainActivity) {
     private var debugKind = ""
 
     private fun onDebugState(json: String) {
+        debugPrep = ""
         android.util.Log.i("CodePadDbg", "onDebugState: " + json.take(200))
         val o = try {
             JSONObject(json)

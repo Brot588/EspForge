@@ -157,6 +157,18 @@ fun createEditorWebView(ctx: Context, c: IdeController): WebView {
         ) {
             android.util.Log.w("CodePadJS", "err ${request?.url} ${error?.description}")
         }
+
+        // 页面加载完别自动抢焦点，否则首次启动输入法会自己弹出来挡住半个屏幕
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            try {
+                view?.clearFocus()
+                val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as android.view.inputmethod.InputMethodManager
+                imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            } catch (_: Throwable) {
+            }
+        }
     }
     wv.clearCache(true)
     wv.loadUrl("https://appassets.androidplatform.net/assets/editor/index.html")

@@ -247,7 +247,7 @@
     function syncWidth() {
       try {
         var layout = editor.getLayoutInfo();
-        strip.style.width = Math.max(0, layout.contentLeft) + 'px';
+        strip.style.width = (Math.max(0, layout.contentLeft) + 14) + 'px';
       } catch (e) {
       }
     }
