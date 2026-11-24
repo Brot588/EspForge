@@ -63,7 +63,7 @@
 
 ## 下载
 
-**[⬇ 下载最新版（Releases）](https://github.com/Brot588/CodePad/releases/latest)**
+**[⬇ 下载最新版（Releases）](https://github.com/Brot588/CodePad-Android/releases/latest)**
 
 只提供 **arm64-v8a**，要求 Android 8.0+。
 
