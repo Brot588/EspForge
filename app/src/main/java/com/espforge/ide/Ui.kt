@@ -430,7 +430,7 @@ fun IdeScreen(c: IdeController) {
                     }
                     if (c.building) {
                         IconButton(onClick = { c.stopBuild() }) {
-                            Icon(Icons.Filled.Stop, contentDescription = "停止构建", tint = Green)
+                            Icon(Icons.Filled.Stop, contentDescription = "停止构建", tint = Color(0xFFFF8A80))
                         }
                     } else {
                         IconButton(onClick = { c.build() }) {
@@ -949,25 +949,35 @@ private fun BottomDock(c: IdeController, panelHeight: Int) {
             Spacer(Modifier.weight(1f))
 
             // 每个 Tab 的右侧动作统一：28dp 图标、16dp、只有图标没有文字，
-            // 主操作在左、危险操作(关闭/断开/停止)在右且用红色。
+            // 默认一律灰色剪影；只有「正在发生/已激活」的状态才上色（构建中=红、烧录中=琥珀、串口已连=红）。
+            // 顺序：主操作在左、危险操作(关闭/断开/停止)在右。
             if (c.bottomTab == TERMINAL_TAB) {
                 DockAction(Icons.Filled.DeleteSweep, "清屏") { c.clearTerminal() }
                 DockAction(Icons.Filled.RestartAlt, "重启会话") { c.restartTerminal() }
                 DockAction(Icons.Filled.Close, "关闭面板") { c.showTerminal = false }
             } else if (c.bottomTab == BUILD_TAB) {
-                DockAction(Icons.Filled.PlayArrow, "构建", Green) { c.build() }
+                DockAction(Icons.Filled.PlayArrow, "构建") { c.build() }
                 DockAction(Icons.Filled.Refresh, "清理") { c.cleanBuild() }
                 DockAction(Icons.Filled.Build, "自检") { c.runSelfCheck() }
-                DockAction(Icons.Filled.Stop, "停止", Color(0xFFFF8A80), enabled = c.building) { c.stopBuild() }
+                DockAction(
+                    Icons.Filled.Stop,
+                    "停止",
+                    tint = if (c.building) Color(0xFFFF8A80) else Muted,
+                    enabled = c.building,
+                ) { c.stopBuild() }
             } else if (c.bottomTab == FLASH_TAB) {
-                // 烧录自己会在没连串口时去连；这里不再放「构建」（构建页有）
-                DockAction(Icons.Filled.FlashOn, "烧录", Color(0xFFFFC857), enabled = !c.flashing) { c.flash() }
+                DockAction(
+                    Icons.Filled.FlashOn,
+                    "烧录",
+                    tint = if (c.flashing) Color(0xFFFFC857) else Muted,
+                    enabled = !c.flashing,
+                ) { c.flash() }
                 DockAction(Icons.Filled.Delete, "清空烧录日志") { c.clearFlashLog() }
             } else if (c.bottomTab == SERIAL_TAB) {
                 if (c.serialOpen) {
                     DockAction(Icons.Filled.Close, "断开串口", Color(0xFFFF8A80)) { c.disconnectSerial() }
                 } else {
-                    DockAction(Icons.Filled.Usb, "连接串口", Green) { c.connectSerial() }
+                    DockAction(Icons.Filled.Usb, "连接串口") { c.connectSerial() }
                 }
                 DockAction(Icons.Filled.Refresh, "复位芯片", enabled = c.serialOpen) { c.serialReset() }
                 DockAction(Icons.Filled.Download, "进入下载模式", enabled = c.serialOpen) { c.serialToBootloader() }
