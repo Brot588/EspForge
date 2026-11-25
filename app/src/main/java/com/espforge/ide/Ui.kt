@@ -1008,6 +1008,7 @@ private fun BottomDock(c: IdeController, panelHeight: Int) {
             } else if (c.bottomTab == BUILD_TAB) {
                 DebugBtn(Icons.Filled.PlayArrow, "构建", Green) { c.build() }
                 DebugBtn(Icons.Filled.Refresh, "清理") { c.cleanBuild() }
+                DebugBtn(Icons.Filled.Build, "自检") { c.runSelfCheck() }
                 DebugBtn(Icons.Filled.Stop, "停止", Color(0xFFFF8A80)) { if (c.building) c.stopBuild() }
             } else if (c.bottomTab == FLASH_TAB) {
                 DebugBtn(Icons.Filled.FlashOn, "烧录", Color(0xFFFFC857)) { c.flash() }
@@ -1205,9 +1206,7 @@ private fun BuildContent(c: IdeController) {
                 },
             )
             Spacer(Modifier.weight(1f))
-            SmallAction("构建") { c.build() }
-            SmallAction("清理") { c.cleanBuild() }
-            SmallAction("自检") { c.runSelfCheck() }
+            // 构建/清理/自检都放在上面那排图标里了，这里不再重复放文字按钮
         }
         Spacer(Modifier.height(4.dp))
         if (!c.packReady) {
@@ -1253,7 +1252,7 @@ private fun BuildContent(c: IdeController) {
             }
         }
         Text(
-            text = c.buildLog.ifBlank { "点右上角 ▶ 或这里「构建」开始，idf.py 的输出会显示在这里" },
+            text = c.buildLog.ifBlank { "点上面的 ▶ 开始构建，idf.py 的输出会显示在这里" },
             fontSize = 10.5.sp,
             fontFamily = FontFamily.Monospace,
             color = Color(0xFFD7DCE5),
