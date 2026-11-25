@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
@@ -172,6 +174,7 @@ fun IdeScreen(c: IdeController) {
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
+                expandedHeight = 48.dp,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Panel,
                     titleContentColor = Color(0xFFD7DCE5),
@@ -310,34 +313,32 @@ fun IdeScreen(c: IdeController) {
                             }
                         }
                     } else {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = c.active?.name ?: (c.project?.name ?: "EspForge"),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                        // 单行标题（对齐 CodePad v4.7）：文件名 + 未保存点 + 工程名
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = c.active?.name ?: (c.project?.name ?: "EspForge"),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (c.dirty) {
+                                Box(
+                                    Modifier
+                                        .padding(start = 6.dp)
+                                        .size(7.dp)
+                                        .background(Accent, RoundedCornerShape(50))
                                 )
-                                if (c.dirty) {
-                                    Box(
-                                        Modifier
-                                            .padding(start = 6.dp)
-                                            .size(7.dp)
-                                            .background(Accent, RoundedCornerShape(50))
-                                    )
-                                }
-                                if (c.active != null) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(c.activeLang?.name ?: "", fontSize = 11.sp, color = Muted)
-                                }
                             }
-                            if (c.active != null) {
+                            if (c.active != null && !c.project?.name.isNullOrBlank()) {
+                                Spacer(Modifier.width(8.dp))
                                 Text(
                                     text = c.project?.name ?: "",
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     color = Color(0xFF5C6773),
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -357,13 +358,58 @@ fun IdeScreen(c: IdeController) {
                             tint = if (c.searchOpen) Green else idle,
                         )
                     }
-                    if (c.building) {
-                        IconButton(onClick = { c.stopBuild() }) {
-                            Icon(Icons.Filled.Stop, contentDescription = "停止构建", tint = Green)
+                    // 工程菜单（对齐 CodePad v4.7）：工程列表 + 新建/导入/导出/重命名/删除
+                    Box {
+                        var projectOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { projectOpen = true }) {
+                            Icon(
+                                Icons.Filled.FolderOpen,
+                                contentDescription = "工程",
+                                tint = if (projectOpen) Green else idle,
+                            )
                         }
-                    } else {
-                        IconButton(onClick = { c.build() }) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = "构建", tint = idle)
+                        DropdownMenu(expanded = projectOpen, onDismissRequest = { projectOpen = false }) {
+                            c.projects.forEach { p ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                if (p.id == c.project?.id) Icons.Filled.FolderOpen else Icons.Filled.Folder,
+                                                null,
+                                                tint = if (p.id == c.project?.id) Green else Muted,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(p.name, fontSize = 13.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        projectOpen = false
+                                        if (p.id != c.project?.id) c.switchProject(p)
+                                    },
+                                )
+                            }
+                            HorizontalDivider(color = Stroke)
+                            DropdownMenuItem(
+                                text = { Text("新建工程…") },
+                                onClick = { projectOpen = false; c.openDialog("newProject") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导入工程（zip）") },
+                                onClick = { projectOpen = false; c.startImport() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出当前工程（zip）") },
+                                onClick = { projectOpen = false; c.startExport() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重命名当前工程…") },
+                                onClick = { projectOpen = false; c.openDialog("renameProject") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除当前工程…") },
+                                onClick = { projectOpen = false; c.openDialog("deleteProject") },
+                            )
                         }
                     }
                     // 保存只在打开了文件时出现，避免点了没反应
@@ -382,8 +428,14 @@ fun IdeScreen(c: IdeController) {
                             tint = if (c.showTerminal) Green else idle,
                         )
                     }
-                    IconButton(onClick = { c.openDialog("newFile", c.project?.dir) }) {
-                        Icon(Icons.Filled.Add, contentDescription = "新建文件", tint = idle)
+                    if (c.building) {
+                        IconButton(onClick = { c.stopBuild() }) {
+                            Icon(Icons.Filled.Stop, contentDescription = "停止构建", tint = Green)
+                        }
+                    } else {
+                        IconButton(onClick = { c.build() }) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "构建", tint = idle)
+                        }
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
@@ -418,18 +470,6 @@ fun IdeScreen(c: IdeController) {
                             DropdownMenuItem(
                                 text = { Text("选择目标芯片…（" + c.chipLabel() + "）") },
                                 onClick = { menuOpen = false; c.openDialog("chip") },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导出工程（zip）") },
-                                onClick = { menuOpen = false; c.startExport() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导入工程（zip）") },
-                                onClick = { menuOpen = false; c.startImport() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("新建工程") },
-                                onClick = { menuOpen = false; c.openDialog("newProject") },
                             )
                             DropdownMenuItem(
                                 text = { Text("ESP-IDF 资源包…") },
@@ -981,8 +1021,8 @@ private fun BottomDock(c: IdeController, panelHeight: Int) {
             // 每个 Tab 的右侧动作统一：28dp 图标、16dp、只有图标没有文字，
             // 主操作在左、危险操作(关闭/断开/停止)在右且用红色。
             if (c.bottomTab == TERMINAL_TAB) {
-                DockAction(Icons.Filled.Delete, "清屏") { c.clearTerminal() }
-                DockAction(Icons.Filled.Refresh, "重启会话") { c.restartTerminal() }
+                DockAction(Icons.Filled.DeleteSweep, "清屏") { c.clearTerminal() }
+                DockAction(Icons.Filled.RestartAlt, "重启会话") { c.restartTerminal() }
                 DockAction(Icons.Filled.Close, "关闭面板") { c.showTerminal = false }
             } else if (c.bottomTab == BUILD_TAB) {
                 DockAction(Icons.Filled.PlayArrow, "构建", Green) { c.build() }

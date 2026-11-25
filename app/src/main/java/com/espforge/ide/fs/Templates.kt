@@ -86,9 +86,9 @@ object Templates {
 
         ## 在这个 App 里
 
-        - 右上角 🔨 构建：等价于 `idf.py build`
-        - 右上角 ⚡ 烧录：等价于 `idf.py -p <串口> flash`
-        - 串口面板：等价于 `idf.py monitor`
+        - 顶栏 ▶ 构建：等价于 `idf.py build`
+        - 底部「烧录」面板的 ⚡：等价于 `idf.py -p <串口> flash`
+        - 底部「串口」面板：等价于 `idf.py monitor`
 
         ## 在电脑上
 

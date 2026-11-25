@@ -1284,8 +1284,7 @@ class IdeController(private val activity: MainActivity) {
             |  esac
             |}
             |
-            |PS1="${'$'}{__esc}[38;5;39m╭─${'$'}{__esc}[0m ${'$'}{__esc}[38;5;244m\${'$'}(date +%H:%M)${'$'}{__esc}[0m ${'$'}{__esc}[38;5;81m${'$'}{CODEPAD_PROJECT}${'$'}{__esc}[0m ${'$'}{__esc}[38;5;250m\${'$'}(__cp_path)${'$'}{__esc}[0m${'$'}{__esc}[38;5;36m\${'$'}(__cp_git)${'$'}{__esc}[0m
-            |${'$'}{__esc}[38;5;41m╰─❯${'$'}{__esc}[0m "
+            |PS1="${'$'}{__esc}[38;5;41m❯${'$'}{__esc}[0m ${'$'}{__esc}[38;5;250m\${'$'}(__cp_path)${'$'}{__esc}[0m${'$'}{__esc}[38;5;36m\${'$'}(__cp_git)${'$'}{__esc}[0m "
             |
             |alias ls='ls --color=auto'
             |alias ll='ls -l'

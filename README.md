@@ -23,9 +23,13 @@
 |---|---|
 | ![](docs/screenshot-build-success.png) | ![](docs/screenshot-terminal-keyboard.png) |
 
-| 烧录面板 | 串口面板 |
+| 工程菜单 | 烧录面板 |
 |---|---|
-| ![](docs/screenshot-dock-flash.png) | ![](docs/screenshot-dock-serial.png) |
+| ![](docs/screenshot-project-menu.png) | ![](docs/screenshot-dock-flash.png) |
+
+| 串口面板 | 全局搜索 |
+|---|---|
+| ![](docs/screenshot-dock-serial.png) | ![](docs/screenshot-keyboard-search.png) |
 
 ## 为什么这件事不容易
 
