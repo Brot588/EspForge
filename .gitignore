@@ -38,3 +38,6 @@ pack/*.zip
 
 # 原生编译临时目录
 .ntmp/
+
+# 旧版本资源包（体积大，不进仓库）
+pack/superseded-*/
