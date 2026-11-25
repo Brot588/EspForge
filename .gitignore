@@ -41,3 +41,7 @@ pack/*.zip
 
 # 旧版本资源包（体积大，不进仓库）
 pack/superseded-*/
+
+# Python 字节码
+__pycache__/
+*.pyc
