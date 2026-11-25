@@ -1,4 +1,4 @@
-# ESP Studio 设计说明
+# EspForge 设计说明
 
 Android 平板上的 ESP32 开发环境：**官方 ESP-IDF 工程结构 + 离线构建 + USB 烧录 + 串口调试**。
 从 CodePad 派生（保留了编辑器 / 文件树 / Git / 终端 / 全局搜索 / 设置这些跟语言无关的部分）。

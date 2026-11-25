@@ -40,8 +40,8 @@ DEP_NEW = """def action_check_python_dependencies(args):  # type: ignore
     \"\"\"
     import os as _os
     if _os.environ.get('ESPSTUDIO_SKIP_DEP_CHECK', '').lower() in ('1', 'yes', 'true'):
-        # ESP Studio 离线资源包：依赖在 PYTHONPATH 里，不按 venv 版本约束校验。
-        info('Skipping Python dependency check (ESP Studio offline pack)')
+        # ESP 工坊 离线资源包：依赖在 PYTHONPATH 里，不按 venv 版本约束校验。
+        info('Skipping Python dependency check (ESP 工坊 offline pack)')
         return
 """
 
@@ -50,10 +50,44 @@ EXT_ANCHOR = """            if name.endswith('_ext'):
                 extensions.append((name, import_module(name)))
 """
 
+
+# ---- ESP-IDF 5.2.x variants -------------------------------------------------
+# 5.2 的 Platforms.get() 没有 5.5 里那句 "hasn't been added yet" 的 raise，改为在
+# detect_linux_arm_platform 之前按平台别名兜底。
+PLATFORM_ANCHOR_52 = """        platform_name = Platforms.detect_linux_arm_platform(platform_name)
+        return platform_name
+"""
+
+PLATFORM_NEW_52 = """        if not platform_name and 'android' in platform_alias.lower():
+            # Android / bionic：当成 linux-arm64 处理（工具链随资源包自带）
+            platform_name = (
+                PLATFORM_LINUX_ARM64
+                if ('aarch64' in platform_alias.lower() or 'arm64' in platform_alias.lower())
+                else PLATFORM_LINUX64
+            )
+        platform_name = Platforms.detect_linux_arm_platform(platform_name)
+        return platform_name
+"""
+
+# 5.2 的 action_check_python_dependencies() 没有 docstring，而且第一句就会
+# get_python_env_path() + fatal('venv doesn't exist')，必须在这里就返回。
+DEP_ANCHOR_52 = """def action_check_python_dependencies(args):  # type: ignore
+    use_constraints = not args.no_constraints
+"""
+
+DEP_NEW_52 = """def action_check_python_dependencies(args):  # type: ignore
+    import os as _os
+    if _os.environ.get('ESPSTUDIO_SKIP_DEP_CHECK', '').lower() in ('1', 'yes', 'true'):
+        # ESP Studio 离线资源包：依赖在 PYTHONPATH 里，没有 venv，跳过版本校验。
+        info('Skipping Python dependency check (ESP Studio offline pack)')
+        return
+    use_constraints = not args.no_constraints
+"""
+
 EXT_NEW = """            if name.endswith('_ext'):
                 try:
                     extensions.append((name, import_module(name)))
-                except Exception as _e:  # ESP Studio: 单个扩展导入失败不该让整个 idf.py 挂掉
+                except Exception as _e:  # ESP 工坊: 单个扩展导入失败不该让整个 idf.py 挂掉
                     print_warning('WARNING: skipping idf.py extension %s: %s' % (name, _e))
 """
 
@@ -74,6 +108,10 @@ def patch_file(path: pathlib.Path) -> bool:
             t = t.replace(PLATFORM_ANCHOR, PLATFORM_NEW, 1)
             changed = True
             print('  platform: 已打补丁')
+        elif PLATFORM_ANCHOR_52 in t:
+            t = t.replace(PLATFORM_ANCHOR_52, PLATFORM_NEW_52, 1)
+            changed = True
+            print('  platform: 已打补丁 (5.2 锚点)')
         else:
             print('  platform: 找不到锚点')
 
@@ -83,6 +121,10 @@ def patch_file(path: pathlib.Path) -> bool:
             t = t.replace(DEP_ANCHOR, DEP_NEW, 1)
             changed = True
             print('  dep-check: 已打补丁')
+        elif DEP_ANCHOR_52 in t:
+            t = t.replace(DEP_ANCHOR_52, DEP_NEW_52, 1)
+            changed = True
+            print('  dep-check: 已打补丁 (5.2 锚点)')
         else:
             print('  dep-check: 找不到锚点')
     else:

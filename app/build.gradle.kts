@@ -5,12 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.espstudio.ide"
+    namespace = "com.espforge.ide"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "com.espstudio.ide"
+        applicationId = "com.espforge.ide"
         minSdk = 26
         targetSdk = 28
         versionCode = 1
