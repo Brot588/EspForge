@@ -31,3 +31,7 @@ pack/dl/
 pack/build/
 pack/*.zip
 
+
+# adb 调试临时文件
+.adbtmp/
+
