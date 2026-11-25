@@ -140,7 +140,10 @@ fun createEditorWebView(ctx: Context, c: IdeController): WebView {
         mediaPlaybackRequiresUserGesture = false
     }
     wv.isVerticalScrollBarEnabled = false
-    wv.setOnFocusChangeListener { _, hasFocus -> c.editorFocused = hasFocus }
+    wv.setOnFocusChangeListener { _, hasFocus ->
+        c.editorFocused = hasFocus
+        if (hasFocus) c.dockImeFocused = false // 编辑器拿焦点 → 底部面板不需要抬
+    }
     attachSoftKeyboard(ctx, wv)
     wv.addJavascriptInterface(c.editorBridge, "Android")
     wv.webChromeClient = object : android.webkit.WebChromeClient() {
@@ -203,6 +206,8 @@ fun createTerminalWebView(ctx: Context, c: IdeController): WebView {
         builtInZoomControls = false
     }
     attachSoftKeyboard(ctx, wv)
+    // 终端拿焦点时键盘会挡住它 → 让 Ui 把底部面板整体抬到键盘上方
+    wv.setOnFocusChangeListener { _, hasFocus -> c.dockImeFocused = hasFocus }
     wv.addJavascriptInterface(
         com.espforge.ide.editor.TerminalBridge(
             onInput = { bytes -> c.terminalInput(bytes) },
@@ -242,6 +247,8 @@ fun createSerialWebView(ctx: Context, c: IdeController): WebView {
         setSupportZoom(false)
         builtInZoomControls = false
     }
+    // 串口面板同理：拿到焦点时把底部面板抬到键盘上方
+    wv.setOnFocusChangeListener { _, hasFocus -> c.dockImeFocused = hasFocus }
     wv.addJavascriptInterface(
         com.espforge.ide.editor.TerminalBridge(
             onInput = { bytes -> c.serialInput(bytes) },

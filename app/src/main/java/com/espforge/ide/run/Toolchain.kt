@@ -38,7 +38,7 @@ import java.util.zip.ZipInputStream
 object Toolchain {
 
     /** 资源包内容布局版本。修补逻辑变了就 +1，老包的 .ok 标记自动失效并重跑修补。 */
-    private const val PACK_VERSION = "2"
+    private const val PACK_VERSION = "4"
 
     val root: File get() = File(App.ctx.filesDir, "pack")
 
@@ -294,11 +294,10 @@ object Toolchain {
     fun ensureShim(): File? {
         val dst = File(root, "execshim")
         try {
-            if (!dst.isFile || dst.length() < 1024) {
-                App.ctx.assets.open("execshim").use { input ->
-                    dst.outputStream().use { out -> input.copyTo(out) }
-                }
-            }
+            val asset = App.ctx.assets.open("execshim").use { it.readBytes() }
+            val cur = if (dst.isFile) dst.readBytes() else null
+            // 内容比对：垫片升级（比如新增了 GCC_* 变量清理）后要能覆盖旧的
+            if (cur == null || !cur.contentEquals(asset)) dst.writeBytes(asset)
             dst.setExecutable(true, false)
             if (dst.isFile && dst.length() > 1024) return dst
         } catch (_: Throwable) {
@@ -337,6 +336,12 @@ object Toolchain {
     //  5. 工程模板 sdkconfig.defaults 关掉证书包 —— 见 fs/Templates.kt
     //  6. env() 不设 IDF_PYTHON_ENV_PATH —— 见下面 env()
     //
+    // 还有两项是为了在 App 进程里（有 seccomp 过滤）能跑 glibc 工具链：
+    //  7. glibc 的 ld.so / libc.so.6 里 set_robust_list(#99) / rseq(#293) 调用点
+    //     改成 nop（app seccomp 会 KILL_PROCESS 这两个 syscall）
+    //  8. execshim 垫片清掉 GCC_EXEC_PREFIX/COLLECT_GCC*（带着它们 cc1 会 SIGSYS），
+    //     并刷新已经包过的工具
+    //
     // 全部幂等；返回值是本次实际改动的位置数，0 表示已是最新。
 
     @Synchronized
@@ -346,8 +351,143 @@ object Toolchain {
         changed += patchPyserial()
         changed += patchPythonPath()
         changed += patchGdbinit()
+        changed += patchGlibcSyscalls()
+        // 垫片本身也升级过（新增 GCC_* 环境变量清理）：已包装的工具换成新垫片
+        ensureShim()?.let { changed += refreshWrappedShims(it) }
         if (changed > 0) onStatus("已应用资源包修补（$changed 处）")
         return changed
+    }
+
+    /**
+     * 5. 把 glibc 里几个被 app seccomp 杀掉（KILL_PROCESS → SIGSYS）的 syscall 处理掉。
+     *
+     *   set_robust_list(#99) / rseq(#293)：把 mov 后面紧跟的 `svc #0` 换成 `nop`。
+     *     glibc 在 ld.so 和 libc 的早期初始化里就会调它们，导致任何 glibc 程序
+     *     一 exec 就 "Bad system call"。返回值 glibc 都忽略/能降级，跳过安全
+     *     （代价：PTHREAD_MUTEX_ROBUST 的 robust 语义没了，工具链不用它）。
+     *
+     *   faccessat2(#439) → faccessat(#48)：直接改 syscall 号。
+     *     glibc 的 access() 优先用 faccessat2，Android 会杀它（实测 ld 就是这样死的）；
+     *     老 syscall 在 flags=0（access() 的用法）时语义一致。
+     */
+    private fun patchGlibcSyscalls(): Int {
+        val dir = File(glibcDir, "lib")
+        if (!dir.isDirectory) return 0
+        val nop = byteArrayOf(0x1f, 0x20, 0x03, 0xd5.toByte())
+        val moves = arrayOf(
+            byteArrayOf(0x68, 0x0c, 0x80.toByte(), 0xd2.toByte()),            // mov x8, #99
+            byteArrayOf(0xa8.toByte(), 0x24, 0x80.toByte(), 0xd2.toByte()),   // mov x8, #293
+        )
+        val accessat2 = byteArrayOf(0xe8.toByte(), 0x36, 0x80.toByte(), 0xd2.toByte()) // mov x8, #439
+        val accessat = byteArrayOf(0x08, 0x06, 0x80.toByte(), 0xd2.toByte())           // mov x8, #48
+        var total = 0
+        dir.listFiles()?.forEach { f ->
+            if (!f.isFile || f.length() < 4096) return@forEach
+            val data = try {
+                f.readBytes()
+            } catch (_: Throwable) {
+                return@forEach
+            }
+            var hits = 0
+            for (mv in moves) hits += nopSvcAfter(data, mv, nop)
+            hits += replaceAll(data, accessat2, accessat)
+            if (hits > 0) {
+                try {
+                    f.writeBytes(data)
+                    total += hits
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        return total
+    }
+
+    /** 把 mov 之后 40 字节内第一条 `svc #0` 换成 nop（参数准备指令可能夹在中间） */
+    private fun nopSvcAfter(data: ByteArray, mv: ByteArray, nop: ByteArray): Int {
+        var hits = 0
+        var i = 0
+        val limit = data.size - mv.size
+        scan@ while (i <= limit) {
+            var k = 0
+            while (k < 4 && data[i + k] == mv[k]) k++
+            if (k != 4) {
+                i++
+                continue@scan
+            }
+            val stop = minOf(i + 40, data.size - 4)
+            var j = i + 4
+            while (j <= stop) {
+                if (data[j] == 0x01.toByte() && data[j + 1] == 0x00.toByte() &&
+                    data[j + 2] == 0x00.toByte() && data[j + 3] == 0xd4.toByte()
+                ) {
+                    for (b in 0 until 4) data[j + b] = nop[b]
+                    hits++
+                    i = j + 4
+                    continue@scan
+                }
+                j++
+            }
+            i++
+        }
+        return hits
+    }
+
+    /** 等长替换（4 字节指令改 syscall 号） */
+    private fun replaceAll(data: ByteArray, from: ByteArray, to: ByteArray): Int {
+        var hits = 0
+        var i = 0
+        val limit = data.size - from.size
+        while (i <= limit) {
+            var k = 0
+            while (k < from.size && data[i + k] == from[k]) k++
+            if (k == from.size) {
+                for (b in from.indices) data[i + b] = to[b]
+                hits++
+                i += from.size
+            } else {
+                i++
+            }
+        }
+        return hits
+    }
+
+    /** 把已经包装过的工具（旁边有同名 .real 的）换成当前垫片 */
+    private fun refreshWrappedShims(shim: File): Int {
+        val bytes = try {
+            shim.readBytes()
+        } catch (_: Throwable) {
+            return 0
+        }
+        val dirs = ArrayList<File>()
+        for (tcRoot in listOf(xtensaDir("esp32"), xtensaDir("esp32s3"))) {
+            if (!tcRoot.isDirectory) continue
+            dirs.add(File(tcRoot, "bin"))
+            dirs.add(File(tcRoot, "${tcRoot.name}/bin"))
+            File(tcRoot, "libexec/gcc").listFiles()?.forEach { ver ->
+                ver.listFiles()?.filter { it.isDirectory }?.let { dirs.addAll(it) }
+            }
+        }
+        var n = 0
+        for (dir in dirs) {
+            dir.listFiles()?.forEach { f ->
+                if (!f.isFile || f.name.endsWith(".real")) return@forEach
+                if (!File(dir, f.name + ".real").isFile) return@forEach
+                val cur = try {
+                    f.readBytes()
+                } catch (_: Throwable) {
+                    return@forEach
+                }
+                if (!cur.contentEquals(bytes)) {
+                    try {
+                        f.writeBytes(bytes)
+                        f.setExecutable(true, false)
+                        n++
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        }
+        return n
     }
 
     /** 1. Termux 二进制里硬编码的 shell 路径改成 Android 的等长替换 */
@@ -488,6 +628,16 @@ object Toolchain {
         }
     }
 
+    /** 删掉旧版本的 .ok 标记，只留当前 PACK_VERSION 的 */
+    fun pruneOldMarkers() {
+        try {
+            root.listFiles()?.forEach { f ->
+                if (f.isFile && f.name.startsWith(".ok-") && f.name != marker.name) f.delete()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
     /**
      * 一条龙把资源包准备到可用：权限 → glibc 垫片 → 内容修补 → .ok 标记。
      * 幂等，已就绪时直接返回。
@@ -498,6 +648,7 @@ object Toolchain {
             onStatus("资源包未导入")
             return false
         }
+        pruneOldMarkers()
         if (isReady()) return true
         ensureDirs()
         ensureExecutable(onStatus)
@@ -517,6 +668,10 @@ object Toolchain {
             File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc").isFile
         if (ok) {
             try {
+                // 只留当前版本的标记，别在包里攒一堆 .ok-1/.ok-2/.ok-3
+                root.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.startsWith(".ok-") && f.name != marker.name) f.delete()
+                }
                 marker.writeText("ok")
             } catch (_: Throwable) {
             }

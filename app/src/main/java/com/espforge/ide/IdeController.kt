@@ -56,6 +56,13 @@ class IdeController(private val activity: MainActivity) {
 
     /** 编辑区是否持有焦点：键盘弹出时只有编辑区需要让位，终端里输入时不能把终端藏起来 */
     var editorFocused by mutableStateOf(false)
+
+    /**
+     * 底部面板（终端/串口）里的 WebView 是否拿到了焦点。
+     * 为 true 且键盘弹出时，UI 会把整个底部面板抬到键盘上方 ——
+     * 编辑器/搜索框获得焦点时不动，保持「键盘直接盖住、不挤压编辑区」的约定。
+     */
+    var dockImeFocused by mutableStateOf(false)
     var bottomTab by mutableStateOf(TERMINAL_TAB)
     var terminalHeight by mutableStateOf(260)
     var statusLine by mutableStateOf("就绪")
@@ -501,6 +508,7 @@ class IdeController(private val activity: MainActivity) {
     }
 
     fun refreshPack() {
+        Toolchain.pruneOldMarkers()
         packReady = Toolchain.isReady()
         packStatus = if (!packReady) {
             val miss = Toolchain.missing()

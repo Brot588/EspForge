@@ -98,6 +98,16 @@ int main(int argc, char **argv) {
     unsetenv("LD_LIBRARY_PATH");
     unsetenv("LD_PRELOAD");
 
+    /*
+     * GCC 驱动给自己子进程传的记账变量。实测：cc1 的环境里只要带着
+     * GCC_EXEC_PREFIX，在 Android 的 app seccomp 下就会走到被杀的路径
+     * （Bad system call / SIGSYS），去掉它就正常。工具链程序本身都不需要
+     * 这几个变量（路径由驱动按 argv[0] 自己算），统一清掉最稳。
+     */
+    unsetenv("GCC_EXEC_PREFIX");
+    unsetenv("COLLECT_GCC");
+    unsetenv("COLLECT_GCC_OPTIONS");
+
     execv(loader, na);
     perror("execshim: execv loader");
     return 127;

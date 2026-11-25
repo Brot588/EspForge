@@ -1,12 +1,12 @@
 # EspForge — Android 平板上的 ESP32 IDE
 
-> 官方 ESP-IDF 工程结构 + 平板本地编译 + USB 烧录 + 串口调试。
+> 官方 ESP-IDF 工程结构 + **平板本地编译** + USB 烧录 + 串口调试。
 > 从 CodePad 派生；本文件同时是**交接文档**（换新会话时先读这里）。
 
 - 工程目录：`D:\DSH\espstudio`
 - 包名：`com.espforge.ide`　应用名：`EspForge`　版本：`0.1`
 - 设备：HUAWEI BTK-W00（MatePad），Android 12，arm64-v8a，adb 序列号 `7VXYD24309200097`
-- 最近更新：2026-11-26（落地 6 项修补、修好终端、查清 App 内编译的真实阻塞点）
+- 最近更新：2026-11-26（**App 内完整构建跑通**、终端修好、键盘不再挡终端）
 
 ---
 
@@ -16,25 +16,22 @@
 |---|---|---|
 | 编辑器 / 资源管理器 / Git / 搜索 | ✅ 可用 | Monaco，顶栏搜索框 + 浮层结果 |
 | 工程生成 | ✅ 可用 | 官方 IDF 结构（`CMakeLists.txt` + `main/` + `sdkconfig.defaults`） |
-| 资源包导入 + 自动修补 + `.ok` 标记 | ✅ **本次落地，真机验证** | 把 6 项修补写进了 `Toolchain`，见第四节 |
-| 平板本地编译（CLI / `run-as`） | ✅ **干净构建通过** | 930/930、`blink.bin` 207,456 B、`blink.elf` 2,835,516 B |
-| **App 内「构建」按钮** | ❌ **被系统禁止** | 设备 seccomp 杀 glibc 进程，见第六节（不是代码问题，也不是资源包问题） |
-| 终端面板 | ✅ **已修** | 有提示符、能执行命令，见第五节 |
+| 资源包导入 + 自动修补 + `.ok` 标记 | ✅ 可用 | 修补全部写进 `Toolchain`，见第四节 |
+| **App 内「▶ 构建」** | ✅ **可用** | 真机从零完整构建 **66 秒 / 930 个目标**，见第六节 |
+| 终端面板 | ✅ 可用 | 真 PTY，有提示符，见第五节 |
+| 虚拟键盘 | ✅ 修好 | 终端里键盘不再挡住终端；编辑/搜索仍然不挤压编辑区 |
 | 烧录 / 串口 | ⚠️ 代码已写，未真机验证 | `serial/EspFlasher.kt` 自己实现 esptool ROM 协议 |
 
-### 已验证（真机）
-
-用 `com.espforge.ide` 自己的 uid、App 自己修补过的资源包、`Toolchain.env()` 的同一套环境变量，
-删掉 `build/` 和 `sdkconfig` 后完整跑了一遍官方流程（`run-as` 命令行）：
+### 已验证（真机，删掉 `build/` 和 `sdkconfig` 后从零开始）
 
 ```
-idf.py build  →  exit=0，[930/930]
-blink.bin   207,456 字节
-blink.elf 2,835,516 字节
+App 内点 ▶：  [930/930] 构建成功 · 66s
+              build/blink.bin   207,456 字节
+              build/blink.elf 2,835,516 字节
+CLI（run-as）：同一套资源包 + Toolchain.env() 也通过（用于对照排查）
 ```
 
-结论：**资源包 + 6 项修补 + 环境变量是对的**，`idf.py build` 在这台平板上是能跑通的。
-唯一跑不通的入口是「App 进程里直接 fork/exec 工具链」——原因见第六节。
+![App 内完整构建成功](docs/screenshot-build-success.png)
 
 ---
 
@@ -55,20 +52,24 @@ $env:TEMP="$tc\tmp"; $env:TMP=$env:TEMP          # 必须，否则 gradle/adb �
 **adb 的坑**：adb 默认往 `%TEMP%\adb.log` 写日志，那个文件被沙箱 ACL 锁住会 `Permission denied`，
 daemon 起不来。每次用 adb 前设 `$env:TEMP='D:\DSH\espstudio\.adbtmp'`。
 
-### 原生库（`jniLibs`）要在仓库里编译，别用继承来的 .so
+### 原生库必须由仓库里的源码编译
 
-`app/src/main/jniLibs/arm64-v8a/libptybridge.so` 现在由 `native/ptybridge.c` 编译得到：
+| 产物 | 源码 | 编译命令（NDK r27c） |
+|---|---|---|
+| `app/src/main/assets/execshim` | `native/execshim.c` | `aarch64-linux-android26-clang -O2 -fPIE -pie -o ...` |
+| `app/src/main/jniLibs/arm64-v8a/libptybridge.so` | `native/ptybridge.c` | `aarch64-linux-android26-clang -O2 -shared -fPIC -o ...` |
+| 诊断用（不入 APK） | `native/scprobe.c`、`native/sigsysprobe.c` | 见第六节 |
 
 ```powershell
 $bin='D:\DSH\toolchain\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64\bin'
 $env:TEMP='D:\DSH\espstudio\.ntmp'               # 同理，默认 TEMP 会被 ACL 挡住
-& "$bin\aarch64-linux-android26-clang.cmd" -O2 -shared -fPIC `
-    -o app\src\main\jniLibs\arm64-v8a\libptybridge.so native\ptybridge.c
+& "$bin\aarch64-linux-android26-clang.cmd" -O2 -fPIE -pie `
+    -o app\src\main\assets\execshim native\execshim.c
 ```
 
-**坑**：这个 .so 以前是从 CodePad 继承的，导出的是 `Java_com_codepad_ide_term_Pty_*`；
-包名改成 `com.espforge.ide` 之后 JNI 符号找不到，`Pty.start()` 静默失败、终端全黑。
-换包名/改包结构时，一定要同步重编原生库（`llvm-nm -D` 确认符号名）。
+**坑**：`libptybridge.so` 以前是从 CodePad 继承的，导出 `Java_com_codepad_ide_term_Pty_*`；
+包名改成 `com.espforge.ide` 后 JNI 符号找不到，`Pty.start()` 静默失败、终端全黑。
+改包名一定要同步重编原生库，并用 `llvm-nm -D` 确认符号名。
 
 ---
 
@@ -87,8 +88,7 @@ glibc/                    aarch64 glibc 运行时（Debian bookworm）
 manifest.json
 ```
 
-设备上的位置：`/data/user/0/com.espforge.ide/files/pack`（当前是 tar 侧载的 1.2 GB 解压版）。
-
+设备上的位置：`/data/user/0/com.espforge.ide/files/pack`（tar 侧载的 1.2 GB 解压版）。
 重建脚本在 `pack/scripts/`：`build-pack-525.py`（可续跑）、`verify-pack-525.py`、`make-docs-525.py`。
 
 ### 关键设计：glibc 工具链怎么在 bionic 上跑
@@ -96,115 +96,128 @@ manifest.json
 工具链是 glibc 二进制，Android 是 bionic，直接 exec 会找不到 `/lib/ld-linux-aarch64.so.1`。
 
 - **不要**对工具链二进制做 `patchelf`（会破坏 ELF 段布局，`cc1` 段错误）
-- 做法：`native/execshim.c`（NDK 编译，产物 `app/src/main/assets/execshim`）
-  —— 一个原生 ELF 垫片，从 `/proc/self/exe` 向上找 `glibc/lib/ld-linux-aarch64.so.1` 定位 pack 根，
-  然后 `execv(loader, [--library-path <glibc/lib> <自身>.real 原参数])`
-- `Toolchain.wrapGlibc()` 把每个 ELF 可执行文件改名为 `*.real`，原位置放这个垫片
-- **必须用 ELF 垫片，不能用 shell 脚本**：ninja 用 `posix_spawn` 直接 exec，脚本形式会 `code=127`
+- 做法：`native/execshim.c` → 原生 ELF 垫片，从 `/proc/self/exe` 向上找
+  `glibc/lib/ld-linux-aarch64.so.1` 定位 pack 根，然后
+  `execv(loader, [--library-path <glibc/lib> <自身>.real 原参数])`
+- `Toolchain.wrapGlibc()` 把每个 ELF 可执行文件改名 `*.real`，原位置放垫片
+- **必须用 ELF 垫片，不能用 shell 脚本**：ninja 用 `posix_spawn` 直接 exec，脚本形式 127
 
 ---
 
-## 四、6 项资源包修补（已落地到代码）
+## 四、资源包修补（全部已落地到代码）
 
-以前这些修补只手工打在设备和 staging 上；现在全部写进了 `run/Toolchain.kt`，
-在 `finalizePack()` 里幂等执行（解压后、以及每次启动发现包没就绪时）。
+`Toolchain.applyPackPatches()` / `finalizePack()` 幂等执行；`PACK_VERSION` 变了老标记自动失效。
+`.ok-<PACK_VERSION>`（现在是 `.ok-4`）是「资源包已就绪」的唯一标记。
 
 | # | 修补 | 实现 | 为什么 |
 |---|---|---|---|
 | 1 | `tools/cmake/bin/{ninja,cmake,make}` 里的 Termux shell 路径 → `/system/bin/sh`（**等长字节替换**，多余补 NUL） | `patchTermuxShell()` | Termux 版 ninja 把 shell 硬编码成 Termux 路径，每条命令 `code=127` |
-| 2 | `tools/python-site/serial/tools/list_ports_posix.py` 给 Android 加分支返回 `[]` | `patchPyserial()` | 平台未知时 pyserial 直接 `raise ImportError`，esptool 一 import 就炸 |
-| 3 | `site-packages/espforge_pack.pth` 写入 `$P/tools/python-site` | `patchPythonPath()` | `idf.py` 给子进程的环境会丢 `PYTHONPATH`，`.pth` 不依赖环境变量 |
+| 2 | `serial/tools/list_ports_posix.py` 给 Android 加分支返回 `[]` | `patchPyserial()` | 平台未知时 pyserial 直接 `raise ImportError`，esptool 一 import 就炸 |
+| 3 | `site-packages/espforge_pack.pth` 写入 `$P/tools/python-site` | `patchPythonPath()` | `idf.py` 给子进程的环境会丢 `PYTHONPATH` |
 | 4 | `esp-idf/tools/cmake/gdbinit.cmake` 在 `ESP_ROM_ELF_DIR` 为空时 `return()` | `patchGdbinit()` | 包里没有 rom-elfs，`file(TO_CMAKE_PATH)` 参数不足会中断 configure |
-| 5 | 工程模板 `sdkconfig.defaults` 加 `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` | `fs/Templates.kt` | Termux 的 `cryptography` 缺 `_cffi_backend`，关掉证书包生成就够 |
+| 5 | 工程模板 `sdkconfig.defaults` 加 `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` | `fs/Templates.kt` | 证书包生成要 Termux 的 `cryptography`/`_cffi_backend`，包里没有 |
 | 6 | `env()` 不设 `IDF_PYTHON_ENV_PATH` | `Toolchain.env()` | 设了 IDF 会按 venv 校验依赖，走进 "venv doesn't exist" |
+| 7 | glibc 的 `set_robust_list(#99)` / `rseq(#293)` 调用点 `svc #0` → `nop`；`faccessat2(#439)` → `faccessat(#48)` | `patchGlibcSyscalls()` | app seccomp 会杀这些 syscall，见第六节 |
+| 8 | 垫片清掉 `GCC_EXEC_PREFIX`/`COLLECT_GCC*`，并把已包装的工具换成新垫片 | `native/execshim.c` + `refreshWrappedShims()` | 带着 `GCC_EXEC_PREFIX` 时 `cc1` 会 SIGSYS |
 
-另外两件事也一并修了：
+顺带修的：
 
-- **`.ok` 标记**：`isReady()` 依赖 pack 根的 `.ok-<PACK_VERSION>`（现在是 `.ok-2`）。
-  以前 `wrapGlibc()` 只在「这次真的包了文件」时才写标记，tar 侧载的包永远拿不到 → App 一直说「没装资源包」。
-  现在统一由 `markReadyIfComplete()` 在关键文件齐全时落标记，`PACK_VERSION` 变了老标记自动失效、重跑修补。
-- **`refreshPack()` 的路径写错**：原来检查 `xtensa-esp-elf-gcc`（不存在的名字，实际是
-  `xtensa-esp32-elf-gcc`），所以「包已解压但没整理」时自动整理的逻辑从来没触发过。
-  现在改成 `finalizePack()`，构建前也会再兜一次。
-
-验证方式（可复现）：把 zip 里的原始文件推回设备覆盖、删掉 `.ok*` 和 `.pth`，重启 App →
-App 自己把 5 个文件改好、写出 `.pth`、落下 `.ok-2`，随后 CLI 构建通过。
+- **`.ok` 标记**：以前只在「这次真的包了文件」时写，tar 侧载的包永远拿不到 → App 一直说「没装资源包」。
+  现在统一由 `markReadyIfComplete()` 落标记，`pruneOldMarkers()` 清掉旧版本标记。
+- **`refreshPack()` 里的路径写错**：原来检查 `xtensa-esp-elf-gcc`（不存在，实际 `xtensa-esp32-elf-gcc`），
+  自动整理从来没触发过。现在走 `finalizePack()`，构建前也会兜一次。
 
 ---
 
-## 五、终端（已修）
+## 五、终端与虚拟键盘（都已修）
 
-之前「xterm 起来了、光标在闪、但没有一个字节」，两处 bug：
+### 终端为什么以前是黑屏
 
-1. **WebView 调用跑到 JavaBridge 线程**：`onTerminalReady()` 由 JS 桥在子线程回调，
-   里面直接调 `applyTerminalSettings()` → `evaluateJavascript` → 抛
-   "WebView method called on wrong thread"，整段中断，`ui { ensureTerminal() }` 从没执行。
-   现在整个回调体都进 `ui {}`（主线程），并在主线程直接起 PTY。
+1. **WebView 调用跑到 JavaBridge 线程**：`onTerminalReady()` 由 JS 桥在子线程回调，里面直接调
+   `applyTerminalSettings()` → `evaluateJavascript` 抛 "WebView method called on wrong thread"，
+   整段中断，`ui { ensureTerminal() }` 从没执行。现在整个回调体都进 `ui {}`（主线程）。
 2. **JNI 符号对不上**：`libptybridge.so` 还是 CodePad 的 `com.codepad.ide` 版本，
-   `com.espforge.ide.term.Pty` 找不到 native 实现 → `Pty.start()` 失败（返回 false 且没有任何日志）。
-   现在 `native/ptybridge.c` 在仓库里、符号是 `Java_com_espforge_ide_term_Pty_*`，
-   失败时打 `Log.e` 并把原因写进终端。
+   `com.espforge.ide.term.Pty` 找不到实现 → `Pty.start()` 失败且没有任何日志。
+   现在 `native/ptybridge.c` 在仓库里，失败会 `Log.e` 并把原因写进终端。
 
-终端里现在会先打一行 `[pty fd=… pid=…]`，方便确认 PTY 真的起来了。
+终端启动后会先打一行 `[pty fd=… pid=…]`，方便确认 PTY 真的起来了。
 
-![终端可用](docs/screenshot-terminal.png)
+### 键盘：编辑/搜索「盖住」，终端「抬起来」
+
+- 编辑器 / 搜索框获得焦点：保持 `adjustNothing`，键盘直接盖住底部面板，**不挤压编辑区**（原约定不变）。
+- 终端/串口面板里的 WebView 获得焦点：把「底部面板 + 状态栏」整体**向上平移键盘高度**
+  （`Modifier.offset { IntOffset(0, -dockLift) }`，`dockLift = ime.getBottom()`），只是平移、
+  不改布局高度，所以终端完整露在键盘上方。
+
+实现要点：`IdeController.dockImeFocused` 由终端/串口 WebView 的 `setOnFocusChangeListener` 维护，
+编辑器拿到焦点时置 false；`Ui.kt` 里据此算 `dockLift`。
+
+![终端在键盘上方](docs/screenshot-terminal-keyboard.png)
+
+![搜索时键盘盖住、不挤压编辑区](docs/screenshot-keyboard-search.png)
 
 ---
 
-## 六、⚠️ App 内编译的真实阻塞点：seccomp 杀 glibc 进程
+## 六、⚠️ 关键：怎么让 glibc 程序在 App 进程里跑起来（seccomp）
 
-这是**项目最关键的结论**，也是「App 里点 ▶ 构建不通」的真正原因（不是那 6 项修补）。
+这是本项目最硬的一块。**Android app 进程的 seccomp 过滤器会 KILL_PROCESS 掉一串 syscall**，
+而 glibc 的启动路径正好会用到其中几个 —— 结果是任何 glibc 二进制一 exec 就 `Bad system call`
+（SIGSYS，退出码 159），连 `gcc --version` 都过不去。
 
-### 现象
-
-cmake 的编译器测试失败，`[code=159]`，gcc 一句话都不说：
+### 实测的「杀名单」（`native/scprobe.c` 在 App 终端里跑出来的）
 
 ```
-[1/2] .../xtensa-esp32-elf-gcc ... -o ... -c .../testCCompiler.c.obj
-FAILED: [code=159] CMakeFiles/cmTC_b1abd.dir/testCCompiler.c.obj
+rseq               signal=31 (SIGSYS)
+clone3             signal=31 (SIGSYS)
+get_mempolicy      signal=31 (SIGSYS)
+mbind              signal=31 (SIGSYS)
+set_mempolicy      signal=31 (SIGSYS)
+move_pages         signal=31 (SIGSYS)
+migrate_pages      signal=31 (SIGSYS)
+io_uring_setup     signal=31 (SIGSYS)
+pkey_alloc         signal=31 (SIGSYS)
+set_robust_list    signal=31 (SIGSYS)
+get_robust_list    signal=31 (SIGSYS)
+（process_vm_readv/writev、perf_event_open、userfaultfd、membarrier 是放行的）
 ```
 
-在 App 内置终端里直接跑同一个 gcc，得到 `Bad system call`（= SIGSYS，退出码 159），
-**连 `gcc --version` 都过不去**。
+对照：`/proc/<app pid>/status` 里 `Seccomp: 2 / Seccomp_filters: 1`；
+`run-as … sh` 的 `Seccomp: 0`。这解释了为什么 CLI（`run-as`）能构建、App 里不能。
 
-### 证据
+### 三处针对性处理（都在 `Toolchain` 里，随资源包就绪自动做）
 
-| 检查 | 结果 |
-|---|---|
-| `adb shell cat /proc/<app pid>/status` → `Seccomp:` | `2`（装了 1 个过滤器） |
-| `run-as com.espforge.ide sh -c 'cat /proc/self/status'` → `Seccomp:` | `0`（没有过滤器） |
-| 在 App 终端里逐个数探测 syscall（`native/scprobe.c`） | `set_robust_list`、`get_robust_list`、`pkey_alloc`、`io_uring_setup`、`migrate_pages` → **signal=31 (SIGSYS)** |
-| `signal(SIGSYS, SIG_IGN)` 后再 exec | 仍然 SIGSYS（说明是 `KILL_PROCESS`，不是可捕获的 TRAP） |
+1. **ld.so 与 libc.so.6 的 `set_robust_list`/`rseq`**
+   glibc 每个进程启动都会调。把 `mov x8,#99` / `mov x8,#293` 后面 40 字节内的 `svc #0`
+   改成 `nop`（等长替换）。ld.so 有 2 处（`0x1073c`、`0x10790`），libc 有 3 处。
+   返回值 glibc 都忽略——代价只是 `PTHREAD_MUTEX_ROBUST` 的 robust 语义没了，工具链不用它。
+2. **`faccessat2` → `faccessat`**
+   glibc 的 `access()` 优先用 `faccessat2(#439)`，Android 杀它。把 `mov x8,#439` 直接改成
+   `mov x8,#48`（老 `faccessat`，`flags=0` 时语义一致）。**ld 就是死在这一步**。
+3. **`GCC_EXEC_PREFIX`**
+   cc1 的环境里只要带着它就会 SIGSYS（实测：`unset` 后立刻正常）。垫片在 exec 前统一
+   `unsetenv` 掉 `GCC_EXEC_PREFIX`/`COLLECT_GCC`/`COLLECT_GCC_OPTIONS`，并刷新已包装的工具。
 
-### 为什么必然失败
+### 以后再遇到「Bad system call」怎么定位
 
-glibc 在 `__pthread_initialize_minimal_internal()` 里，**每个进程启动都会调 `set_robust_list`**。
-设备的 app seccomp 过滤器把它判成必须处死，于是任何 glibc 二进制一 exec 就被 SIGSYS 杀掉。
-ESP 的交叉工具链（`xtensa-esp32-elf-gcc`、`cc1`、`ld`…）全是 glibc 二进制 → 在 App 进程里一个都跑不起来。
+```powershell
+# 1) 谁被杀了：先看是哪个工具
+& $adb logcat -d -s EspForge        # 或看构建面板
 
-**App 无法绕过**：seccomp 过滤器只能叠加、不能放宽（`unshare`/新 namespace 也不行）。
-`run-as`/adb shell 之所以能跑，是因为那些进程不是 zygote 出来的，没有这个过滤器。
+# 2) 哪个 syscall：把探针塞进 glibc 程序（不走 shim，直接 ld.so + --preload）
+$bin='D:\DSH\toolchain\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64\bin'
+& "$bin\aarch64-linux-android26-clang.cmd" -O2 -shared -fPIC -nostdlib `
+    -o cache\sigsysprobe.so native\sigsysprobe.c
+# 设备上：
+#   ld.so --library-path glibc/lib --preload cache/sigsysprobe.so <tool>.real ...
+# 输出形如： [SIGSYS] syscall=439 addr=0x...
+# 439 = faccessat2（arm64 编号见 include/uapi/asm-generic/unistd.h）
 
-### 现在的表现
+# 3) 全量探测哪些 syscall 被禁：把 native/scprobe.c 编成 aarch64 二进制，
+#    在 App 内置终端里跑（它 fork 子进程逐个试，父进程报信号）
+```
 
-App 里点 ▶ 会先做一次 `gcc --version` 自检（`Toolchain.appProcessBlockedReason()`），
-直接用中文说清楚原因，而不是甩一堆 cmake 报错。构建面板显示：
-
-> 本设备禁止 App 进程运行 glibc 程序：seccomp 过滤器拦截 set_robust_list（glibc 每次启动都会调用），
-> 进程直接收到 SIGSYS。ESP 的交叉工具链是 glibc 二进制，所以 App 内编译在这台设备上不可用。
-> 资源包和工程都没问题，改用电脑（或 adb）侧 idf.py 可以正常编译。
-
-![App 内构建的真实提示](docs/screenshot-build-blocked.png)
-
-### 可选的出路（需要产品决策）
-
-1. **PC / 远程编译**：平板只做编辑 + 烧录 + 串口，编译交给同网段的 PC（或 aarch64 Linux 小主机）。
-   现有 `idf.py` 产物格式（`build/flasher_args.json`）可以直接被 `EspFlasher` 消费，改动最小。
-2. **换设备验证**：先在别的机型上确认是这台华为的策略问题还是 Android 12 通用。
-   若别的机型允许 `set_robust_list`，App 内编译就能用，代码已经准备好了。
-3. **root / 非 zygote 进程**：不可行（普通用户拿不到，且政策上不该走这条路）。
-4. **bionic 版 xtensa 工具链**：理论上可行（把 GCC 交叉编译到 aarch64-linux-android），
-   但工作量大、GCC host 需要完整 POSIX 环境，属于月级工程。
+**注意**：`SIG_IGN` 没用（内核是 KILL_PROCESS，不是可捕获的 TRAP）；
+seccomp 过滤器只能叠加不能放宽，所以只能从「别调那个 syscall」入手。
 
 ---
 
@@ -237,7 +250,7 @@ PREFIX=$P/tools/cmake             # Termux 版 cmake 靠它读 include/android/a
 ## 八、UI 约定（别改坏）
 
 - 键盘：`windowSoftInputMode=adjustNothing`（**代码里 `MainActivity.onCreate` 也有一行，改 manifest 不够**），
-  内容列**不要**加 `imePadding()`。键盘直接盖住底部面板，不挤压编辑区。
+  内容列**不要**加 `imePadding()`。例外只有底部面板的「平移」逻辑（见第五节），它不改变布局高度。
 - 底部 Dock **永远保持挂载**：不要按 `searchOpen`/键盘把高度收 0、更不要从组合里摘掉，
   否则终端 WebView 反复 attach，点「终端」标签直接崩。
 - 终端 WebView 只在「终端」页挂载（其它页挂载会盖住构建/烧录面板，`AndroidView` 是原生层压不住）。
@@ -250,9 +263,9 @@ PREFIX=$P/tools/cmake             # Termux 版 cmake 靠它读 include/android/a
 
 ```
 app/src/main/java/com/espforge/ide/
-├─ IdeController.kt   状态中枢：工程/文件/构建/串口/烧录/调试/Git
-├─ Ui.kt              Compose 界面（顶栏、资源管理器、编辑器、底部 Dock：终端/构建/烧录/串口/调试/Git）
-├─ MainActivity.kt    WebView 创建、资源包文件选择器、窗口软键盘策略
+├─ IdeController.kt   状态中枢：工程/文件/构建/串口/烧录/调试/Git、终端会话
+├─ Ui.kt              Compose 界面（顶栏、资源管理器、编辑器、底部 Dock、键盘平移）
+├─ MainActivity.kt    WebView 创建（编辑器/终端/串口）、资源包选择器、软键盘策略
 ├─ run/
 │   ├─ Toolchain.kt   资源包导入/整理/修补、glibc 垫片、IDF 环境变量、进程执行 ★
 │   ├─ GdbClient.kt   GDB RSP 客户端（调试用，未接入）
@@ -263,10 +276,11 @@ app/src/main/java/com/espforge/ide/
 ├─ fs/{Projects,Templates,Workspace,SearchService}.kt
 └─ term/{Pty,TerminalSession}.kt
 native/
-├─ execshim.c         glibc 入口垫片（NDK: aarch64-linux-android26-clang -O2 -fPIE -pie）
-├─ ptybridge.c        终端 PTY（forkpty + execve），产物进 jniLibs
-└─ scprobe.c          seccomp 探测工具（诊断第六节的问题用）
-pack/scripts/         资源包构建 + 各类补丁脚本
+├─ execshim.c         glibc 入口垫片（定位 pack、清 LD_*/GCC_*、exec ld.so）
+├─ ptybridge.c        终端 PTY（forkpty+execve）→ jniLibs
+├─ scprobe.c          seccomp 探测：哪些 syscall 被禁
+└─ sigsysprobe.c      LD_PRELOAD 探针：抓到 SIGSYS 时打印 syscall 号
+pack/scripts/         资源包构建 + 各类补丁脚本（Python 版，App 里已用 Kotlin 重写）
 docs/DESIGN.md        设计说明（为什么不用 proot/patchelf/JTAG 等）
 ```
 
@@ -274,14 +288,12 @@ docs/DESIGN.md        设计说明（为什么不用 proot/patchelf/JTAG 等）
 
 ## 十、下一步
 
-**先做产品决策**（第六节）：App 内编译被系统禁止，继续做「平板自己编译」还是转「PC 编译 + 平板烧录」。
-在这之前，剩下能独立推进的事情：
-
-1. 烧录：用 `build/flasher_args.json` + `EspFlasher` 真机烧一次（现在 `blink.bin` 已经有了），串口看日志
-2. 串口面板：`createSerialWebView` 的 AssetLoader 已经补上（之前会白屏），真机确认能出日志
+1. **烧录**：`build/blink.bin` 已经有了，用 `build/flasher_args.json` + `EspFlasher` 真机烧一次
+   （需要把 ESP32 板子插到平板；插上后 adb 得走无线）
+2. **串口面板**：`createSerialWebView` 的 AssetLoader 已补（以前会白屏），真机确认能出日志
 3. gdbstub 断点调试（复用 `GdbClient` + `DwarfInfo`）
-4. 在另一台 Android 设备上复测第六节的结论（决定是不是这台华为的策略）
-5. 资源包重新打包：把 6 项修补预先打进 zip（App 侧仍然会幂等检查，双保险）
+4. 资源包重新打包：把第四节的修补预先打进 zip（App 侧仍会幂等检查，双保险）
+5. 换一台 Android 设备复测：确认这份 seccomp 杀名单是华为的策略还是 Android 12 通用
 
 ---
 
@@ -299,12 +311,15 @@ $adb='D:\DSH\plugins\dsh-androidforge\toolchain\android-sdk\platform-tools\adb.e
 & $adb logcat -d -s EspForge                                        # 只看自己的日志
 & $adb shell screencap -p /sdcard/s.png; & $adb pull /sdcard/s.png $env:TEMP\s.png
 & $adb shell input tap <x> <y>                                      # 屏幕实际 2200x1440
-& $adb shell input text "ls%s-l"                                    # 空格要写 %s
+& $adb shell input text "ls%s-l"                                    # 空格写 %s
+& $adb shell input keyevent 66                                      # 回车
 ```
 
-坐标换算：截图预览宽 1596 → 实际 2200，比例 1.378。顶栏搜索图标实际位置约 `(1428, 121)`，
-终端图标约 `(1973, 121)`，Dock 的「终端/构建」标签约 `(62, 933)` / `(178, 933)`，
-构建面板的 ▶ 约 `(2068, 933)`。
+坐标（实际 2200×1440；截图预览 1596 宽，比例 1.378）：顶栏搜索图标 `(1428,121)`、
+终端图标 `(1973,121)`、Dock 的「终端」「构建」标签 `(62,933)`/`(178,933)`、
+构建面板 ▶ `(2068,933)`。
+
+构建期的原始日志在 `<project>/build/log/idf_py_stderr_output_*`，cmake 报错先看它。
 
 ---
 

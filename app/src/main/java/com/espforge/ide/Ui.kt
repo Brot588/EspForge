@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,6 +140,9 @@ private val Muted = Color(0xFF8B95A5)
 @Composable
 fun IdeScreen(c: IdeController) {
     val imeVisible = WindowInsets.isImeVisible
+    val density = LocalDensity.current
+    // 终端/串口拿焦点时把底部面板抬到键盘上方；编辑器和搜索框不动
+    val dockLift = if (imeVisible && c.dockImeFocused) WindowInsets.ime.getBottom(density) else 0
     val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
@@ -485,14 +489,24 @@ fun IdeScreen(c: IdeController) {
                     }
                 }
             }
-            // 底部面板一直显示，不做任何"让位"：搜索时让虚拟键盘自己盖住它就行。
+            // 底部面板一直显示，不做任何"让位"：编辑/搜索时让虚拟键盘自己盖住它就行。
             // （之前把高度收到 0 / 从组合里摘掉，都会让终端 WebView 反复 attach、
             //  点终端标签时直接崩，所以彻底不做这件事。）
-            if (c.showTerminal) {
-                HorizontalDivider(color = Stroke)
-                BottomDock(c, c.terminalHeight)
+            //
+            // 例外：终端/串口里的 WebView 拿到焦点时，键盘会把面板整个挡住，没法边看边敲。
+            // 这时把「面板 + 状态栏」整体向上平移键盘高度（只是平移，不改布局高度，
+            // 所以编辑区依旧不被挤压）。
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(0, -dockLift) }
+            ) {
+                if (c.showTerminal) {
+                    HorizontalDivider(color = Stroke)
+                    BottomDock(c, c.terminalHeight)
+                }
+                StatusBar(c)
             }
-            StatusBar(c)
         }
         }
     }
