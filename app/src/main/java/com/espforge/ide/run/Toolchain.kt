@@ -25,17 +25,20 @@ import java.util.zip.ZipInputStream
  *
  * 关键点：ESP 的交叉工具链是 glibc 二进制，Android 是 bionic，内核会去找
  * /lib/ld-linux-aarch64.so.1 而失败。这里在解压后为每个 ELF 可执行文件生成
- * 一个 shell wrapper：
+ * 一个原生 ELF 垫片（assets/execshim，见 native/execshim.c）：
  *
- *   #!/system/bin/sh
- *   unset LD_LIBRARY_PATH
- *   exec <glibc>/lib/ld-linux-aarch64.so.1 --library-path <glibc>/lib:<tc>/lib <xxx>.real "$@"
+ *   <tool>               装好的垫片
+ *   <tool>.real          原来的工具链二进制
+ *
+ * 垫片会 exec 成 `<glibc>/lib/ld-linux-aarch64.so.1 --library-path <glibc>/lib <xxx>.real "$@"`。
+ * 必须用 ELF 垫片而不是 shell 脚本：ninja 用 posix_spawn 直接 exec，脚本形式会 127。
  *
  * 不能改用 patchelf 直接改 PT_INTERP：那会破坏 ELF 段布局，cc1 直接段错误。
  */
 object Toolchain {
 
-    private const val PACK_VERSION = "1"
+    /** 资源包内容布局版本。修补逻辑变了就 +1，老包的 .ok 标记自动失效并重跑修补。 */
+    private const val PACK_VERSION = "2"
 
     val root: File get() = File(App.ctx.filesDir, "pack")
 
@@ -172,9 +175,11 @@ object Toolchain {
             ensureExecutable { msg -> onStatus(msg) }
             onStatus("生成 glibc 包装脚本…")
             wrapGlibc { msg -> onStatus(msg) }
-            File(root, ".ok-$PACK_VERSION").writeText("ok")
-            onStatus("资源包就绪")
-            true
+            onStatus("应用资源包修补…")
+            applyPackPatches { msg -> onStatus(msg) }
+            val complete = markReadyIfComplete()
+            onStatus(if (complete) "资源包就绪" else "资源包不完整：" + missing().joinToString("、"))
+            complete
         } catch (t: Throwable) {
             try {
                 staging.deleteRecursively()
@@ -278,14 +283,6 @@ object Toolchain {
             }
         }
         if (count > 0) onStatus("已包装 $count 个工具链程序")
-        else onStatus("工具链包装已是最新")
-        // 包装完成后如果关键文件都在，就落一个就绪标记
-        if (count > 0 && idfPath.isDirectory && pythonExe().isFile && cmakeExe().isFile) {
-            try {
-                File(root, ".ok-$PACK_VERSION").writeText("ok")
-            } catch (_: Throwable) {
-            }
-        }
         return count
     }
 
@@ -325,6 +322,208 @@ object Toolchain {
         }
     }
 
+    // ---------------------------------------------------------- 资源包修补
+    //
+    // 资源包里的二进制/脚本是 Termux 或上游原样打包的，直接在这个 App 里用会坏。
+    // 解压后（或首次启动发现没就绪时）幂等地做这些修补，等价于 pack/scripts/*.py：
+    //
+    //  1. tools/cmake/bin/{ninja,cmake,make} 里硬编码的 Termux 路径 → /system/bin/sh
+    //     （否则 ninja 跑的每条命令都 code=127）
+    //  2. pyserial 的 list_ports_posix.py 在 Android 上返回空列表，不要 raise ImportError
+    //     （esptool import 它就炸，构建时 elf2image 用到）
+    //  3. site-packages/espforge_pack.pth 把 tools/python-site 塞进 sys.path
+    //     （idf.py 的子进程会丢 PYTHONPATH）
+    //  4. gdbinit.cmake 在 ESP_ROM_ELF_DIR 为空时直接 return（包里没有 rom-elfs）
+    //  5. 工程模板 sdkconfig.defaults 关掉证书包 —— 见 fs/Templates.kt
+    //  6. env() 不设 IDF_PYTHON_ENV_PATH —— 见下面 env()
+    //
+    // 全部幂等；返回值是本次实际改动的位置数，0 表示已是最新。
+
+    @Synchronized
+    fun applyPackPatches(onStatus: (String) -> Unit = {}): Int {
+        var changed = 0
+        changed += patchTermuxShell()
+        changed += patchPyserial()
+        changed += patchPythonPath()
+        changed += patchGdbinit()
+        if (changed > 0) onStatus("已应用资源包修补（$changed 处）")
+        return changed
+    }
+
+    /** 1. Termux 二进制里硬编码的 shell 路径改成 Android 的等长替换 */
+    private fun patchTermuxShell(): Int {
+        val dir = File(cmakeDir(), "bin")
+        if (!dir.isDirectory) return 0
+        val pairs = listOf(
+            "/data/data/com.termux/files/usr/bin/sh".toByteArray() to "/system/bin/sh".toByteArray(),
+            "/data/data/com.termux/files/usr/bin/bash".toByteArray() to "/system/bin/sh".toByteArray(),
+        )
+        var n = 0
+        dir.listFiles()?.forEach { f ->
+            if (!f.isFile || f.length() < 4096) return@forEach
+            for ((old, new) in pairs) n += patchEqualLength(f, old, new)
+        }
+        return n
+    }
+
+    /**
+     * 在文件里做等长字节替换，多出来的字节用 NUL 填 —— C 字符串到第一个 NUL 结束，
+     * 所以填充安全。这样不用改 ELF 的布局/长度。
+     */
+    private fun patchEqualLength(file: File, old: ByteArray, new: ByteArray): Int {
+        if (new.size > old.size) return 0
+        val data = try {
+            file.readBytes()
+        } catch (_: Throwable) {
+            return 0
+        }
+        val first = old[0]
+        var hits = 0
+        var i = 0
+        val limit = data.size - old.size
+        while (i <= limit) {
+            if (data[i] != first) {
+                i++
+                continue
+            }
+            var j = 1
+            while (j < old.size && data[i + j] == old[j]) j++
+            if (j == old.size) {
+                System.arraycopy(new, 0, data, i, new.size)
+                var k = new.size
+                while (k < old.size) {
+                    data[i + k] = 0
+                    k++
+                }
+                hits++
+                i += old.size
+            } else {
+                i++
+            }
+        }
+        if (hits > 0) {
+            try {
+                file.writeBytes(data)
+            } catch (_: Throwable) {
+                return 0
+            }
+        }
+        return hits
+    }
+
+    /** 2. pyserial：Android 上给 comports 一个空实现 */
+    private fun patchPyserial(): Int {
+        val f = File(pythonSite(), "serial/tools/list_ports_posix.py")
+        if (!f.isFile) return 0
+        val text = try {
+            f.readText()
+        } catch (_: Throwable) {
+            return 0
+        }
+        if (text.contains("plat[:7] == 'android'") || text.contains("sys.platform == 'android'")) {
+            return 0 // 已经打过
+        }
+        val anchor = "else:\n    # platform detection has failed"
+        if (!text.contains(anchor)) return 0
+        val branch = "elif plat[:7] == 'android':  # EspForge: bionic 没有 /dev/tty*，串口走 UsbManager\n" +
+            "    def comports(include_links=False):\n" +
+            "        return []\n\n"
+        return try {
+            f.writeText(text.replaceFirst(anchor, branch + anchor))
+            1
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    /** 3. 用 .pth 把 python-site 加进 sys.path（不依赖环境变量传递） */
+    private fun patchPythonPath(): Int {
+        val lib = File(pythonDir(), "lib")
+        val sitePackages = lib.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("python3") }
+            ?.map { File(it, "site-packages") }
+            ?.firstOrNull { it.isDirectory }
+            ?: return 0
+        val pth = File(sitePackages, "espforge_pack.pth")
+        val want = pythonSite().absolutePath + "\n"
+        if (pth.isFile) {
+            val cur = try {
+                pth.readText()
+            } catch (_: Throwable) {
+                ""
+            }
+            if (cur == want) return 0
+        }
+        return try {
+            pth.writeText(want)
+            1
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    /** 4. gdbinit.cmake：没有 rom-elfs 时别让 configure 死在 file(TO_CMAKE_PATH) */
+    private fun patchGdbinit(): Int {
+        val f = File(idfPath, "tools/cmake/gdbinit.cmake")
+        if (!f.isFile) return 0
+        val text = try {
+            f.readText()
+        } catch (_: Throwable) {
+            return 0
+        }
+        if (text.contains("EspForge: 资源包不含 esp-rom-elfs")) return 0
+        val anchor = "    file(TO_CMAKE_PATH \$ENV{ESP_ROM_ELF_DIR} ESP_ROM_ELF_DIR)\n"
+        if (!text.contains(anchor)) return 0
+        val guard = "    if(\"\$ENV{ESP_ROM_ELF_DIR}\" STREQUAL \"\")\n" +
+            "        # EspForge: 资源包不含 esp-rom-elfs，且不用 OpenOCD/JTAG，\n" +
+            "        # 跳过 gdbinit 生成，避免 file(TO_CMAKE_PATH) 参数不足而中断 configure。\n" +
+            "        return()\n" +
+            "    endif()\n" +
+            anchor
+        return try {
+            f.writeText(text.replaceFirst(anchor, guard))
+            1
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    /**
+     * 一条龙把资源包准备到可用：权限 → glibc 垫片 → 内容修补 → .ok 标记。
+     * 幂等，已就绪时直接返回。
+     */
+    @Synchronized
+    fun finalizePack(onStatus: (String) -> Unit = {}): Boolean {
+        if (!root.isDirectory) {
+            onStatus("资源包未导入")
+            return false
+        }
+        if (isReady()) return true
+        ensureDirs()
+        ensureExecutable(onStatus)
+        wrapGlibc(onStatus)
+        applyPackPatches(onStatus)
+        val ok = markReadyIfComplete()
+        if (ok) onStatus("资源包就绪") else onStatus("资源包不完整：" + missing().joinToString("、"))
+        return ok
+    }
+
+    /** 关键文件齐全就写 .ok 标记；返回是否就绪 */
+    private fun markReadyIfComplete(): Boolean {
+        val ok = idfPath.isDirectory &&
+            pythonExe().isFile &&
+            cmakeExe().isFile &&
+            glibcLoader.isFile &&
+            File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc").isFile
+        if (ok) {
+            try {
+                marker.writeText("ok")
+            } catch (_: Throwable) {
+            }
+        }
+        return ok
+    }
+
     // ------------------------------------------------------------------ 环境
 
     /** 给 bionic 程序（python / cmake / ninja / git）用的库路径 */
@@ -362,7 +561,8 @@ object Toolchain {
         m["TMPDIR"] = tmp.absolutePath
         m["IDF_PATH"] = idfPath.absolutePath
         m["IDF_TOOLS_PATH"] = idfTools.absolutePath
-        m["IDF_PYTHON_ENV_PATH"] = pythonDir().absolutePath
+        // 注意：不要设 IDF_PYTHON_ENV_PATH。IDF 会按 venv 校验依赖，而我们没有真 venv，
+        // 依赖都放在 PYTHONPATH / .pth 里；设了反而会走进 "venv doesn't exist" 的检查。
         // 离线：不启用组件管理器，也不去网上拉东西
         m["IDF_COMPONENT_MANAGER"] = "0"
         m["IDF_TARGET"] = chip
@@ -375,6 +575,37 @@ object Toolchain {
         m["TERM"] = "xterm-256color"
         m.putAll(extra)
         return m
+    }
+
+    /**
+     * 构建前的平台能力自检：App 进程里到底能不能跑 glibc 工具链。
+     *
+     * 部分 Android 设备的 app seccomp 过滤器会用 KILL_PROCESS 杀掉
+     * set_robust_list —— 而 glibc 在 __pthread_initialize_minimal_internal 里
+     * 每次启动都会调它。结果是所有 glibc 二进制一 exec 就 "Bad system call"
+     * （SIGSYS，退出码 159），连 `gcc --version` 都过不去。这跟资源包、工程
+     * 配置都无关，App 也绕不过去（seccomp 过滤器只能叠加、不能放宽）。
+     * 早点探测、把原因说清楚，比让 cmake 抛一堆看不懂的错好。
+     *
+     * @return null 表示能跑；否则是人类可读的原因
+     */
+    fun appProcessBlockedReason(): String? {
+        val gcc = File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc")
+        if (!gcc.isFile) return "缺少 tools/xtensa-esp32-elf/bin/xtensa-esp32-elf-gcc"
+        val out = StringBuilder()
+        val code = runStreaming(listOf(gcc.absolutePath, "--version"), root, env()) { line ->
+            if (out.length < 512) out.append(line).append('\n')
+        }
+        if (code == 0) return null
+        val tail = out.toString().trim()
+        return if (code == 159 || tail.contains("Bad system call")) {
+            "本设备禁止 App 进程运行 glibc 程序：seccomp 过滤器拦截 set_robust_list" +
+                "（glibc 每次启动都会调用），进程直接收到 SIGSYS。\n" +
+                "ESP 的交叉工具链是 glibc 二进制，所以 App 内编译在这台设备上不可用。" +
+                "资源包和工程都没问题，改用电脑（或 adb）侧 idf.py 可以正常编译。"
+        } else {
+            "工具链自检失败：gcc --version 退出码 $code" + if (tail.isEmpty()) "" else "\n$tail"
+        }
     }
 
     /** 检查工具链是否真的能跑起来（输出版本号） */

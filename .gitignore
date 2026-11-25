@@ -35,3 +35,6 @@ pack/*.zip
 # adb 调试临时文件
 .adbtmp/
 
+
+# 原生编译临时目录
+.ntmp/

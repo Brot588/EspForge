@@ -59,6 +59,9 @@ object Templates {
         # 串口 gdbstub：允许调试器在运行时接管 UART0（断点/单步/看变量）
         CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME=y
         CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+        # 关掉证书包生成：生成它要 Termux 的 cryptography / _cffi_backend，
+        # 离线资源包里没有，构建会在「building certificate bundle」处失败。
+        CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
     """.trimIndent() + "\n"
 
     private val gitignore = """

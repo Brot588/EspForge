@@ -245,19 +245,29 @@ fun createSerialWebView(ctx: Context, c: IdeController): WebView {
     wv.addJavascriptInterface(
         com.espforge.ide.editor.TerminalBridge(
             onInput = { bytes -> c.serialInput(bytes) },
+            // 同样是 JavaBridge 线程：WebView 的调用必须回到主线程
             onReady = {
-                c.serialReady = true
-                c.serialJs("CP.setFontSize(${c.terminalFontSize})")
+                c.ui {
+                    c.serialReady = true
+                    c.serialJs("CP.setFontSize(${c.terminalFontSize})")
+                }
             },
             onResize = { _, _ -> },
         ),
         "Android",
     )
+    // 串口监视器用的也是 assets/terminal 那套页面，没有 AssetLoader 会白屏
+    val loader = WebViewAssetLoader.Builder()
+        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+        .build()
     wv.webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
             view: WebView?,
             request: WebResourceRequest?,
-        ): WebResourceResponse? = null
+        ): WebResourceResponse? {
+            val url = request?.url ?: return null
+            return loader.shouldInterceptRequest(url)
+        }
     }
     wv.clearCache(true)
     wv.loadUrl("https://appassets.androidplatform.net/assets/terminal/index.html")

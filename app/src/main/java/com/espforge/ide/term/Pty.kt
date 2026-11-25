@@ -12,8 +12,10 @@ object Pty {
     init {
         loaded = try {
             System.loadLibrary("ptybridge")
+            android.util.Log.i("EspForge", "libptybridge.so loaded")
             true
         } catch (t: Throwable) {
+            android.util.Log.e("EspForge", "libptybridge.so load failed", t)
             false
         }
     }

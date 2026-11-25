@@ -508,20 +508,19 @@ class IdeController(private val activity: MainActivity) {
         } else {
             Toolchain.packSummary()
         }
-        // 资源包已经解压但 wrapper 没生成（比如上次中途失败）→ 补一次
-        if (!packReady && File(Toolchain.root, "manifest.json").isFile && Toolchain.glibcLoader.isFile) {
-            if (File(Toolchain.xtensaDir(), "bin/xtensa-esp-elf-gcc").isFile) {
-                Thread({
-                    val n = Toolchain.wrapGlibc { msg -> ui { packStatus = msg } }
-                    ui {
-                        packReady = Toolchain.isReady()
-                        if (packReady) {
-                            packStatus = Toolchain.packSummary()
-                            appendBuild("工具链包装脚本已生成（$n 个）")
-                        }
+        // 资源包已经解压但还没整理好（上次中途失败、或 tar 侧载的包没有 .ok 标记）
+        // → 后台补一次 finalizePack：权限、glibc 垫片、6 项内容修补、.ok 标记
+        if (!packReady && File(Toolchain.root, "manifest.json").isFile) {
+            Thread({
+                val ok = Toolchain.finalizePack { msg -> ui { packStatus = msg } }
+                ui {
+                    packReady = ok && Toolchain.isReady()
+                    if (packReady) {
+                        packStatus = Toolchain.packSummary()
+                        appendBuild("资源包已整理就绪")
                     }
-                }, "wrap-glibc").start()
-            }
+                }
+            }, "pack-finalize").start()
         }
     }
 
@@ -587,18 +586,11 @@ class IdeController(private val activity: MainActivity) {
     /** 运行 idf.py build；输出实时进「构建」面板 */
     fun build() {
         if (building) return
-        refreshPack()
-        if (!packReady) {
-            toast = "还没有资源包，先导入"
-            openDialog("pack")
-            return
-        }
         val p = project ?: run {
             toast = "先新建一个工程"
             return
         }
         saveBuffer(null)
-        Toolchain.ensureIdfPythonEnv()
         building = true
         buildOk = null
         buildBuf.setLength(0)
@@ -608,22 +600,58 @@ class IdeController(private val activity: MainActivity) {
         showTerminal = true
         val started = System.currentTimeMillis()
         buildThread = Thread({
-            val code = Toolchain.runStreaming(
-                listOf(
-                    Toolchain.pythonExe().absolutePath,
-                    File(Toolchain.idfPath, "tools/idf.py").absolutePath,
-                    "build",
-                ),
-                p.dir,
-                Toolchain.env(chip),
-            ) { line -> ui { appendBuild(line) } }
-            val secs = (System.currentTimeMillis() - started) / 1000
-            ui {
-                building = false
-                buildOk = code == 0
-                buildInfo = if (code == 0) "构建成功 · ${secs}s" else "构建失败（$code）· ${secs}s"
-                statusLine = buildInfo
-                appendBuild(if (code == 0) "── 构建成功 ──" else "── 构建失败 ──")
+            // 资源包没整理好就先补一遍，别让用户看到「还没装资源包」的假提示
+            var ready = Toolchain.isReady()
+            if (!ready) {
+                ui { packStatus = "整理资源包…" }
+                ready = Toolchain.finalizePack { msg -> ui { packStatus = msg } }
+                ui {
+                    packReady = ready && Toolchain.isReady()
+                    if (packReady) packStatus = Toolchain.packSummary()
+                }
+            }
+            if (!ready) {
+                ui {
+                    building = false
+                    buildOk = false
+                    buildInfo = "资源包不完整"
+                    appendBuild("── 资源包不完整：$packStatus ──")
+                    toast = "资源包不完整，先导入"
+                    openDialog("pack")
+                }
+            } else {
+                // 先确认这台设备的 App 进程能不能跑 glibc 工具链（seccomp 可能直接杀进程）
+                val blocked = Toolchain.appProcessBlockedReason()
+                if (blocked != null) {
+                    ui {
+                        building = false
+                        buildOk = false
+                        buildInfo = "本设备不支持 App 内编译"
+                        statusLine = buildInfo
+                        appendBuild("── 本设备不支持 App 内编译 ──")
+                        blocked.lines().forEach { appendBuild(it) }
+                        toast = "App 内编译被系统禁止，原因见构建面板"
+                    }
+                } else {
+                    Toolchain.ensureIdfPythonEnv()
+                    val code = Toolchain.runStreaming(
+                        listOf(
+                            Toolchain.pythonExe().absolutePath,
+                            File(Toolchain.idfPath, "tools/idf.py").absolutePath,
+                            "build",
+                        ),
+                        p.dir,
+                        Toolchain.env(chip),
+                    ) { line -> ui { appendBuild(line) } }
+                    val secs = (System.currentTimeMillis() - started) / 1000
+                    ui {
+                        building = false
+                        buildOk = code == 0
+                        buildInfo = if (code == 0) "构建成功 · ${secs}s" else "构建失败（$code）· ${secs}s"
+                        statusLine = buildInfo
+                        appendBuild(if (code == 0) "── 构建成功 ──" else "── 构建失败 ──")
+                    }
+                }
             }
         }, "esp-build").also { it.start() }
     }
@@ -1270,16 +1298,31 @@ class IdeController(private val activity: MainActivity) {
             "CODEPAD_PROJECT=" + (project?.name ?: "CodePad"),
         )
         val ok = session.start(cwd.absolutePath, 24, 80, env)
+        android.util.Log.i("EspForge", "startSession: ok=$ok ${session.info} cwd=" + cwd.absolutePath)
         if (!ok) {
-            appendTerminal("\u001b[31mPTY 启动失败 (libptybridge.so)\u001b[0m\r\n")
+            appendTerminal(
+                "\u001b[31mPTY 启动失败\u001b[0m（libptybridge.so 没加载：\u001b[38;5;244m" +
+                    (if (com.espforge.ide.term.Pty.loaded) "库已加载，forkpty/exec 失败" else "找不到 libptybridge.so") +
+                    "\u001b[0m）\r\n"
+            )
+        } else {
+            appendTerminal("\u001b[38;5;244m[pty ${session.info}]\u001b[0m\r\n")
         }
     }
 
     fun onTerminalReady() {
-        android.util.Log.i("EspForge", "onTerminalReady: terminalReady=true")
-        terminalReady = true
-        applyTerminalSettings()
+        android.util.Log.i("EspForge", "onTerminalReady: enter")
+        // 这个回调来自 WebView 的 JavaBridge 线程。evaluateJavascript 只能在主线程调用，
+        // 之前在这里直接调 applyTerminalSettings() 会抛 "WebView method called on wrong
+        // thread"，整段中断 —— PTY 永远没启动，终端黑屏。所有 WebView 交互都放主线程。
         ui {
+            terminalReady = true
+            android.util.Log.i("EspForge", "onTerminalReady: on ui thread, starting pty")
+            try {
+                applyTerminalSettings()
+            } catch (t: Throwable) {
+                android.util.Log.w("EspForge", "applyTerminalSettings failed: " + t.message)
+            }
             val pending = pendingTerminal.toByteArray()
             pendingTerminal.reset()
             if (pending.isNotEmpty()) {

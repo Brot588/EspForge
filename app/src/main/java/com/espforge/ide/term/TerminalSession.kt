@@ -24,6 +24,11 @@ class TerminalSession(
 
     val running: Boolean get() = pid > 0 && !closed
 
+    /** "fd=12 pid=3456"：给日志和终端提示用 */
+    @Volatile
+    var info: String = ""
+        private set
+
     fun start(cwd: String, rows: Int, cols: Int, env: Array<String>): Boolean {
         if (!Pty.loaded) return false
         return try {
@@ -31,6 +36,7 @@ class TerminalSession(
             val parts = res.split(":")
             fd = parts[0].toInt()
             pid = parts[1].toInt()
+            info = "fd=$fd pid=$pid"
             pfd = ParcelFileDescriptor.adoptFd(fd)
             input = FileInputStream(pfd!!.fileDescriptor)
             output = FileOutputStream(pfd!!.fileDescriptor)
@@ -58,6 +64,8 @@ class TerminalSession(
 
             true
         } catch (t: Throwable) {
+            // 别静默失败：终端黑屏时这条日志是唯一线索
+            android.util.Log.e("EspForge", "pty start failed: " + t, t)
             close()
             false
         }
@@ -99,5 +107,6 @@ class TerminalSession(
         output = null
         pid = -1
         fd = -1
+        info = ""
     }
 }
