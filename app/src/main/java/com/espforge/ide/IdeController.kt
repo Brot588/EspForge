@@ -1195,6 +1195,8 @@ class IdeController(private val activity: MainActivity) {
     }
 
     fun ensureTerminal() {
+        android.util.Log.i("EspForge", "ensureTerminal enter")
+        android.util.Log.i("EspForge", "ensureTerminal: initialized=" + ::session.isInitialized + " running=" + (if (::session.isInitialized) session.running else false))
         if (::session.isInitialized && session.running) return
         session = newSession()
         loadSettings()
@@ -1255,6 +1257,7 @@ class IdeController(private val activity: MainActivity) {
         return f
     }
     private fun startSession() {
+        android.util.Log.i("EspForge", "startSession: cwd=" + (project?.dir?.absolutePath ?: "?"))
         val cwd = project?.dir ?: App.ctx.filesDir
         val env = arrayOf(
             "HOME=" + cwd.absolutePath,
@@ -1273,6 +1276,7 @@ class IdeController(private val activity: MainActivity) {
     }
 
     fun onTerminalReady() {
+        android.util.Log.i("EspForge", "onTerminalReady: terminalReady=true")
         terminalReady = true
         applyTerminalSettings()
         ui {
@@ -1286,6 +1290,7 @@ class IdeController(private val activity: MainActivity) {
     }
 
     fun appendTerminal(text: String) {
+        android.util.Log.i("EspForge", "appendTerminal len=" + text.length)
         appendTerminalBytes(text.toByteArray(Charsets.UTF_8))
     }
 

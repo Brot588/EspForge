@@ -64,7 +64,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        // 键盘直接盖住底部面板，不挤压布局（对应的 manifest 是 adjustNothing）
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
         controller = IdeController(this)
         setContent {
             CodePadTheme {
@@ -190,6 +191,7 @@ fun createEditorWebView(ctx: Context, c: IdeController): WebView {
 
 @SuppressLint("SetJavaScriptEnabled")
 fun createTerminalWebView(ctx: Context, c: IdeController): WebView {
+    android.util.Log.i("EspForge", "createTerminalWebView: 创建 WebView")
     val wv = WebView(ctx)
     wv.setBackgroundColor(0xFF0E1015.toInt())
     wv.settings.apply {

@@ -471,7 +471,6 @@ fun IdeScreen(c: IdeController) {
             Modifier
                 .padding(pad)
                 .fillMaxSize()
-                .imePadding()
         ) {
             TabStrip(c)
             HorizontalDivider(color = Stroke)
@@ -486,8 +485,10 @@ fun IdeScreen(c: IdeController) {
                     }
                 }
             }
-            // 键盘弹出时把底部面板整个收起来，把空间还给编辑区
-            if (c.showTerminal && !c.searchOpen && !(imeVisible && c.editorFocused)) {
+            // 底部面板一直显示，不做任何"让位"：搜索时让虚拟键盘自己盖住它就行。
+            // （之前把高度收到 0 / 从组合里摘掉，都会让终端 WebView 反复 attach、
+            //  点终端标签时直接崩，所以彻底不做这件事。）
+            if (c.showTerminal) {
                 HorizontalDivider(color = Stroke)
                 BottomDock(c, c.terminalHeight)
             }
@@ -1016,20 +1017,23 @@ private fun BottomDock(c: IdeController, panelHeight: Int) {
         }
         HorizontalDivider(color = Stroke)
         Box(Modifier.fillMaxSize()) {
-            // 终端 WebView 始终存在，切换 Tab 不会丢会话
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                // 复用已有 WebView：键盘弹出时会把它从组合里摘掉再挂回来，不能重建，否则会话丢失
-                factory = { ctx ->
-                    val existing = c.terminalView
-                    if (existing != null) {
-                        (existing.parent as? android.view.ViewGroup)?.removeView(existing)
-                        existing
-                    } else {
-                        createTerminalWebView(ctx, c)
-                    }
-                },
-            )
+            // 终端 WebView 只在终端页挂载：它一直挂着会盖住构建/烧录/调试面板
+            // （AndroidView 是原生层，Compose 后画的兄弟节点压不住它）
+            if (c.bottomTab == TERMINAL_TAB) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    // 复用已有 WebView 实例：切换 Tab 只做 detach/attach，不重建，PTY 会话不丢
+                    factory = { ctx ->
+                        val existing = c.terminalView
+                        if (existing != null) {
+                            (existing.parent as? android.view.ViewGroup)?.removeView(existing)
+                            existing
+                        } else {
+                            createTerminalWebView(ctx, c)
+                        }
+                    },
+                )
+            }
             if (c.bottomTab == BUILD_TAB) {
                 BuildContent(c)
             }
