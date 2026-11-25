@@ -377,13 +377,19 @@ def main():
             'IDF_PATH': 'esp-idf',
             'IDF_COMPONENT_MANAGER': '0',
             'ESPSTUDIO_SKIP_DEP_CHECK': '1',
-            'IDF_PYTHON_ENV_PATH': '',
+            'IDF_PYTHON_ENV_PATH': '(unset)',
             'PREFIX': 'tools/cmake',
             'PYTHONHOME': 'tools/python',
             'PYTHONPATH': 'tools/python-site',
             'LD_LIBRARY_PATH': 'tools/python/lib:tools/cmake/lib',
             'GLIBC_LIBRARY_PATH': 'glibc/lib',
+            'PATH': 'tools/python/bin:tools/cmake/bin:tools/xtensa-esp32-elf/bin:'
+                    'tools/xtensa-esp32s3-elf/bin',
         },
+        'ldWrapperTemplate': '#!/system/bin/sh\nexec "$BASE/glibc/lib/ld-linux-aarch64.so.1" '
+                             '--library-path "$BASE/glibc/lib" "$BASE/<真实ELF路径>" "$@"',
+        'ldWrapperNote': 'gcc execs libexec/.../cc1,cc1plus,collect2,lto1 by absolute path, so the '
+                         'wrapper must REPLACE the binary at its own path (keep the real one as *.real).',
         'patches': C['patches'],
         'toolchainWrappers': 'ld-linux-aarch64.so.1 --library-path <abs>/glibc/lib <abs>/tools/<chip>-elf/<real> "$@"',
     }

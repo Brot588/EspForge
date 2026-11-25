@@ -1,0 +1,89 @@
+{
+  "packVersion": "1.0.0",
+  "idfVersion": "v5.2.5",
+  "chips": [
+    "esp32",
+    "esp32s3"
+  ],
+  "pythonVersion": "3.14",
+  "xtensaVersion": "esp-12.2.0_20230208 (per-chip: xtensa-esp32-elf, xtensa-esp32s3-elf)",
+  "toolchains": [
+    "xtensa-esp32-elf",
+    "xtensa-esp32s3-elf"
+  ],
+  "cmakeVersion": "4.5 (Termux bionic build, + libiconv/libxml2/liblzma, api-level.h)",
+  "glibcSource": "Debian 12 bookworm arm64: libc6 2.36-9+deb12u14, libstdc++6 12.2.0-14+deb12u1, libgcc-s1 12.2.0-14+deb12u1, zlib1g 1:1.2.13.dfsg-1 (mirrors.tuna.tsinghua.edu.cn)",
+  "elfExecutables": 92,
+  "elfExecutablesByToolchain": {
+    "xtensa-esp32-elf": 46,
+    "xtensa-esp32s3-elf": 46
+  },
+  "wrapperTargets": {
+    "tools/xtensa-esp32-elf/bin": 28,
+    "tools/xtensa-esp32-elf/libexec/gcc/xtensa-esp32-elf/12.2.0": 6,
+    "tools/xtensa-esp32-elf/libexec/gcc/xtensa-esp32-elf/12.2.0/install-tools": 1,
+    "tools/xtensa-esp32-elf/libexec/gcc/xtensa-esp32-elf/12.2.0/plugin": 1,
+    "tools/xtensa-esp32-elf/xtensa-esp32-elf/bin": 10,
+    "tools/xtensa-esp32s3-elf/bin": 28,
+    "tools/xtensa-esp32s3-elf/libexec/gcc/xtensa-esp32s3-elf/12.2.0": 6,
+    "tools/xtensa-esp32s3-elf/libexec/gcc/xtensa-esp32s3-elf/12.2.0/install-tools": 1,
+    "tools/xtensa-esp32s3-elf/libexec/gcc/xtensa-esp32s3-elf/12.2.0/plugin": 1,
+    "tools/xtensa-esp32s3-elf/xtensa-esp32s3-elf/bin": 10
+  },
+  "wrapperTargetsTotal": 92,
+  "bionicExecutables": {
+    "tools/cmake/bin": 3,
+    "tools/python/bin": 3
+  },
+  "sizes": {
+    "totalBytes": 1236028218,
+    "totalFiles": 24351,
+    "topLevel": {
+      "esp-idf": 298331073,
+      "glibc": 5293504,
+      "manifest.json": 3024,
+      "tools": 932400617
+    },
+    "tools": {
+      "tools/cmake": 34210542,
+      "tools/python": 52561954,
+      "tools/python-site": 35352634,
+      "tools/xtensa-esp32-elf": 403013937,
+      "tools/xtensa-esp32s3-elf": 407261550
+    }
+  },
+  "builtAt": "2026-11-25T23:50:13+0800",
+  "entrypoints": {
+    "idfPy": "esp-idf/tools/idf.py",
+    "gccEsp32": "tools/xtensa-esp32-elf/bin/xtensa-esp32-elf-gcc",
+    "gccEsp32s3": "tools/xtensa-esp32s3-elf/bin/xtensa-esp32s3-elf-gcc",
+    "python": "tools/python/bin/python3",
+    "cmake": "tools/cmake/bin/cmake",
+    "ninja": "tools/cmake/bin/ninja",
+    "make": "tools/cmake/bin/make",
+    "glibcLoader": "glibc/lib/ld-linux-aarch64.so.1"
+  },
+  "runtimeEnv": {
+    "IDF_PATH": "esp-idf",
+    "IDF_COMPONENT_MANAGER": "0",
+    "ESPSTUDIO_SKIP_DEP_CHECK": "1",
+    "IDF_PYTHON_ENV_PATH": "",
+    "PREFIX": "tools/cmake",
+    "PYTHONHOME": "tools/python",
+    "PYTHONPATH": "tools/python-site",
+    "LD_LIBRARY_PATH": "tools/python/lib:tools/cmake/lib",
+    "GLIBC_LIBRARY_PATH": "glibc/lib"
+  },
+  "patches": {
+    "pass_": true,
+    "platform_alias_android": true,
+    "skip_dep_check_env": true,
+    "extension_tolerant": true
+  },
+  "toolchainWrappers": "ld-linux-aarch64.so.1 --library-path <abs>/glibc/lib <abs>/tools/<chip>-elf/<real> \"$@\"",
+  "zip": {
+    "fileName": "esp-idf-5.2.5-arm64.zip",
+    "sizeBytes": 360624747,
+    "sha256": "4cbb75c1a137505af64e91edc83c172e7cd3d578219932a7d892f700d3c2431a"
+  }
+}

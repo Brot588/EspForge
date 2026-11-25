@@ -172,53 +172,64 @@ fun IdeScreen(c: IdeController) {
                     if (c.searchOpen) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Icon(
-                                Icons.Filled.Search,
-                                contentDescription = null,
-                                tint = Green,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            BasicTextField(
-                                value = c.searchQuery,
-                                onValueChange = {
-                                    c.searchQuery = it
-                                    c.runSearch()
-                                },
-                                singleLine = true,
-                                textStyle = LocalTextStyle.current.copy(
-                                    fontSize = 14.sp,
-                                    color = Color(0xFFE6EAF2),
-                                ),
-                                cursorBrush = SolidColor(Green),
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(searchFocus),
-                                decorationBox = { inner ->
-                                    if (c.searchQuery.isEmpty()) {
-                                        Text("在工程中搜索…", fontSize = 14.sp, color = Muted)
-                                    }
-                                    inner()
-                                },
-                            )
-                            Text(
-                                text = if (c.searchBusy) "…" else c.searchResults.size.toString(),
-                                fontSize = 10.5.sp,
-                                color = Muted,
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                            )
-                            IconButton(
-                                onClick = { c.searchOpen = false },
-                                modifier = Modifier.size(28.dp),
+                                    .width(300.dp)
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(17.dp))
+                                    .background(Color(0xFF262B36))
+                                    .padding(start = 11.dp, end = 3.dp),
                             ) {
                                 Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "关闭搜索",
-                                    tint = Muted,
-                                    modifier = Modifier.size(16.dp),
+                                    Icons.Filled.Search,
+                                    contentDescription = null,
+                                    tint = Green,
+                                    modifier = Modifier.size(15.dp),
                                 )
+                                Spacer(Modifier.width(7.dp))
+                                BasicTextField(
+                                    value = c.searchQuery,
+                                    onValueChange = {
+                                        c.searchQuery = it
+                                        c.runSearch()
+                                    },
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFE6EAF2),
+                                    ),
+                                    cursorBrush = SolidColor(Green),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(searchFocus),
+                                    decorationBox = { inner ->
+                                        if (c.searchQuery.isEmpty()) {
+                                            Text("在工程中搜索…", fontSize = 13.sp, color = Color(0xFF7A8494))
+                                        }
+                                        inner()
+                                    },
+                                )
+                                Text(
+                                    text = if (c.searchBusy) "…" else c.searchResults.size.toString(),
+                                    fontSize = 10.sp,
+                                    color = Muted,
+                                    modifier = Modifier.padding(horizontal = 5.dp),
+                                )
+                                IconButton(
+                                    onClick = { c.searchOpen = false },
+                                    modifier = Modifier.size(24.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "关闭搜索",
+                                        tint = Muted,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -407,7 +418,7 @@ fun IdeScreen(c: IdeController) {
                 }
             }
             // 键盘弹出时把底部面板整个收起来，把空间还给编辑区
-            if (c.showTerminal && !(imeVisible && c.editorFocused)) {
+            if (c.showTerminal && !c.searchOpen && !(imeVisible && c.editorFocused)) {
                 HorizontalDivider(color = Stroke)
                 BottomDock(c, c.terminalHeight)
             }
