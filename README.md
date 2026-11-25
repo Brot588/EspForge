@@ -1,135 +1,74 @@
-# CodePad
+# ESP Studio
 
-> 把 VS Code 的**编辑器**体验搬进 Android 平板：Monaco（VS Code 同款内核）+ 内置 C/C++/Rust/Python/JS 工具链，离线编译、真 GDB 调试、Git 面板、HTML 实时预览。
+> Android 平板上的 **ESP32 / ESP32-S3 开发环境**：官方 ESP-IDF 工程结构，离线编译，USB 烧录，串口与断点调试。
 
-一个**完全离线**的 Android 平板 IDE。不需要网络、不需要 Termux、不需要 root：
-工具链随 APK 一起装好，打开就能写代码、编译、下断点、提交 Git。
+从 [CodePad](https://github.com/Brot588/CodePad-Android) 派生：编辑体验、文件树、Git、终端、全局搜索都保留，
+但**只做 ESP32**——Python / JavaScript / Rust 的运行时、clangd 补全、网页预览全部去掉了。
 
-![编辑器与终端](docs/screenshot-terminal.png)
+## 它做什么
 
-## 它和"手机代码编辑器"的区别
+| 能力 | 实现 |
+| --- | --- |
+| 工程生成 | 官方 ESP-IDF 结构（`CMakeLists.txt` + `main/` + `sdkconfig.defaults`），模板：Blink / Hello / Wi-Fi / 空白 |
+| 编辑 | Monaco（VS Code 同款内核），多标签、全局搜索、括号匹配 |
+| 编译 | 真正的 `idf.py build`：xtensa-esp-elf-gcc + cmake + ninja + python，全部跑在平板上 |
+| 烧录 | 自己实现的 esptool ROM loader 协议，走 `UsbManager`（CP210x / CH340 / FTDI / ESP32 原生 USB） |
+| 监视 | 串口终端（xterm.js），可切换波特率、复位、进下载模式 |
+| 调试 | ESP-IDF 自带的串口 gdbstub：断点 / 单步 / 变量（进行中） |
+| 版本控制 | 内置 git（状态 / diff / 暂存 / 提交） |
 
-| | 常见手机编辑器 | CodePad |
-|---|---|---|
-| 编辑器 | 简易高亮 | Monaco（VS Code 同款） |
-| 运行 | 只有脚本语言 | C/C++/Rust/Python/JS/Shell 都能真编译真跑 |
-| 调试 | 打印日志 | gdbserver + DWARF，断点/单步/变量/调用栈 |
-| 补全 | 关键词 | clangd / rust-analyzer（LSP） |
-| 版本控制 | 无 | 内置 git，状态/diff/暂存/提交 |
+## 为什么是「单独的资源包」
 
-## 功能
+ESP-IDF 的工具链是 glibc 二进制（aarch64-linux-gnu），Android 是 bionic，两者不兼容；
+再加上 IDF 源码本身，压缩后 300–400 MB。所以：
 
-### 编辑
-- Monaco 编辑器，语法高亮、括号匹配、多光标、查找替换
-- 多标签页；关闭脏标签会先保存
-- **全局搜索**：整个工程按内容搜索（跳过大文件/二进制/构建目录），点结果直接跳到对应行
-- **设置**：编辑器字号、缩进宽度、自动换行、终端字号，改完即时生效并记住
-- C/C++ 补全与悬停（clangd），Rust 补全（rust-analyzer，需 Cargo 工程）
-- **跳转到定义**：⋮ →「跳转到定义（F12）」，光标停在符号上执行；**支持跨文件**（例如从 .c 跳到 .h 里的声明）
+- **APK 只有 ~27 MB**：编辑器、界面、烧录协议、串口
+- **资源包**是一个 zip：ESP-IDF + xtensa 工具链 + glibc 运行时 + python + cmake/ninja
+- 首次使用从「⋮ → ESP-IDF 资源包」导入，之后完全离线
 
-### 工程
-- 一个工程 = 一个文件夹，支持重命名、删除、切换
-- 文件树支持拖拽移动、文件夹层级、Material 真实图标
-- 模板：空工程 / C / C++·CMake / Python / Rust / Web / 多语言
-- **整包导出/导入 zip**（走系统文件选择器，可存到下载目录）
-
-### 编译与运行
-- **C / C++**：clang 21 + lld，CMake 工程自动 `cmake --build`，支持多 target 选择
-- **Rust**：rustc 1.100 + cargo，有 `Cargo.toml` 时走 `cargo run`
-- **Python**：CPython（Chaquopy 打包，支持标准库）
-- **JavaScript**：QuickJS
-- **Shell**：真实 PTY（JNI forkpty），xterm.js 前端，自定义提示符
-
-### 调试
-- 断点：点行号左侧红点，支持条件无、命中高亮
-- 步进：继续 / 单步跳过 / 单步进入 / 跳出 / 停止
-- 面板：局部变量、调用栈（文件:行号）
-- C/C++/Rust 走 gdbserver + 自研 DWARF 解析；Python 用 `sys.settrace`；JS 用 QuickJS 行级钩子
-- Rust 能展开 `String`、`Vec<T>`、结构体字段（处理了 Rust 字段重排和指针 MTE 标记）
-
-![Rust 变量](docs/screenshot-rust-values.png)
-
-### Git
-- 内置 git 2.56.1，不依赖系统 git；首次使用解压约 13MB
-- 改动列表按状态上色、点文件看单个 diff
-- 单文件暂存 `＋` / 取消暂存 `－` / 丢弃 `↺`（带确认）
-- 全部暂存、只提交已暂存、提交历史
-
-![Git 面板](docs/screenshot-git.png)
-
-### 网页实时预览
-- 打开 `html`/`css`/`js` 时右侧自动出现预览侧边栏
-- **未保存的改动也会即时反映**（内存覆盖，不落盘）
-- 可「收起」，从 ⋮ 菜单重新打开；点 ▶ 可全屏预览
-
-![实时预览](docs/screenshot-live-preview.png)
-
-## 下载
-
-**[⬇ 下载最新版（Releases）](https://github.com/Brot588/CodePad-Android/releases/latest)**
-
-只提供 **arm64-v8a**，要求 Android 8.0+。
-
-`v4.2` 的 APK 校验信息：
-
-```
-CodePad-4.2-arm64.apk   226.4 MB (237,354,383 字节)
-SHA-256: 0d43fe58167b79a950b5aeca5af6ea546b0ada7a72d4c6414a42fd6c908080b1
-```
-
-APK 约 226MB，因为内置了完整的 C/C++/Rust 工具链。
+glibc 工具链怎么在 bionic 上跑、资源包为什么这么设计，见 [docs/DESIGN.md](docs/DESIGN.md)。
 
 ## 构建
 
-需要 **JDK 17**、**Android SDK 35**、**Gradle 8.10.2**。
+```powershell
+# 用 dsh-androidforge 插件自带的工具链（JDK17 + SDK35 + Gradle 8.10.2）
+$env:CODEPAD_TOOLCHAIN = "D:\DSH\plugins\dsh-androidforge\toolchain"
+pwsh -File .\build.ps1
+```
+
+或者自己准备 JDK 17 + Android SDK 35：
 
 ```powershell
-# 方式一：已装好 JDK / SDK
 $env:JAVA_HOME   = "C:\path\to\jdk17"
 $env:ANDROID_HOME = "C:\path\to\android-sdk"
 gradle assembleDebug
-
-# 方式二：把工具链放进 ./toolchain（jdk17/ + android-sdk/ + gradle-8.10.2/）
-pwsh -File .\build.ps1
-
-# 方式三：指定工具链目录
-$env:CODEPAD_TOOLCHAIN = "D:\path\to\toolchain"
-pwsh -File .\build.ps1
 ```
 
-`build.ps1` 只做两件事：找到工具链、设好环境变量后交给 Gradle，不含任何硬编码路径。
+产物：`app/build/outputs/apk/debug/app-debug.apk`。
 
-### ⚠️ 仓库不含内置工具链
+## 资源包
 
-`app/src/main/assets/` 下的 6 个 zip（约 200MB）**没有提交到仓库**：
+`pack/` 下有生成脚本，产物是 `esp-idf-<ver>-arm64.zip`：
 
 ```
-tc.zip      clang/lld/gdbserver/llvm 工具 + sysroot
-rust.zip    rustc + cargo + rustlib
-cmake.zip   cmake + make
-clangd.zip  clangd
-git.zip     git
-ra.zip      rust-analyzer + rust-src
+esp-idf/                 ESP-IDF 源码（裁剪）
+tools/xtensa-esp-elf/    glibc 交叉工具链（原始二进制，不改）
+tools/cmake/             bionic 的 cmake / ninja / make
+tools/python/            bionic 的 python3
+tools/python-site/       kconfiglib / pyyaml / esptool …
+glibc/                   aarch64 glibc 运行时
+manifest.json
 ```
 
-没有它们也能编译通过，但运行时相关功能会提示"工具链缺失"。
-生成方法见 [docs/c-toolchain.md](docs/c-toolchain.md)（从 Termux 的 aarch64 包提取，
-并把 ELF 的 `DT_RUNPATH` 从 `/data/data/com.termux/files/usr/lib` 重写为 `$ORIGIN/../lib`）。
+打包步骤见 `pack/BUILD.md`。
 
-## 已知限制
+## 限制
 
-- **仅 arm64-v8a**；`targetSdk 28`（为了能 exec 打包的二进制），所以**无法上架 Google Play**
-- 平板横屏体验最佳，手机上布局局促
-- 全局搜索只按内容匹配，不支持按文件名/正则/替换
-- 设置项有限：字号、缩进、换行、终端字号；主题固定
-- 调试器没有条件断点、watch 表达式、线程列表
-- clangd 只能同文件跳转；rust-analyzer 冷启动数十秒，且可能被 Android 的 phantom process killer 回收
-- 首次使用 Rust / C / Git 功能时会解压工具链，各自需要几秒到几十秒
-- 不支持多窗口/分屏编辑
+- 仅 **arm64-v8a**，`targetSdk 28`（为了能在私有目录 exec 二进制，代价是不能上 Google Play）
+- 只支持 **ESP32 / ESP32-S3**
+- 没有 JTAG 调试（非 root 的 App 无法直接访问 usbdevfs），断点调试走 ESP-IDF 的 UART gdbstub
+- 平板横屏体验最佳
 
 ## 许可证
 
-[GPL-3.0](LICENSE)。
-
-APK 内含 GPL-2.0（git）、GPL-3.0（gdb/gdbserver、make）等第三方组件，
-各组件版权与源码获取方式见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+GPL-3.0（沿用 CodePad）。ESP-IDF、GCC 工具链、CMake、Python 等第三方组件的许可见 `THIRD_PARTY_NOTICES.md`。

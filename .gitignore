@@ -25,3 +25,9 @@ app/src/main/assets/*.zip
 
 # 运行/调试临时
 *.log
+
+# ESP-IDF 资源包（体积大，不进仓库）
+pack/dl/
+pack/build/
+pack/*.zip
+

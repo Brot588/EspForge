@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 常见的 ESP32 开发板 USB 转串口芯片 + ESP32-S3/S2/C3 的原生 USB CDC -->
+<resources>
+    <!-- CP210x (Silicon Labs)：ESP32 DevKitC 常见 -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <!-- CH340 / CH341 (WCH)：NodeMCU、ESP32-WROOM 板常见 -->
+    <usb-device vendor-id="6790" product-id="29987" />
+    <usb-device vendor-id="6790" product-id="21795" />
+    <!-- FTDI FT232 -->
+    <usb-device vendor-id="1027" product-id="24577" />
+    <!-- Espressif 原生 USB（ESP32-S3 / S2 / C3 / C6） -->
+    <usb-device vendor-id="12346" product-id="4097" />
+    <usb-device vendor-id="12346" product-id="4098" />
+    <usb-device vendor-id="12346" product-id="4099" />
+    <usb-device vendor-id="12346" product-id="4100" />
+    <usb-device vendor-id="12346" product-id="4101" />
+    <usb-device vendor-id="12346" product-id="4102" />
+    <usb-device vendor-id="12346" product-id="4103" />
+    <usb-device vendor-id="12346" product-id="4104" />
+    <usb-device vendor-id="12346" product-id="4105" />
+    <usb-device vendor-id="12346" product-id="4106" />
+</resources>

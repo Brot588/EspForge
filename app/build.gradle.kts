@@ -2,20 +2,19 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.chaquo.python")
 }
 
 android {
-    namespace = "com.codepad.ide"
+    namespace = "com.espstudio.ide"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "com.codepad.ide"
+        applicationId = "com.espstudio.ide"
         minSdk = 26
         targetSdk = 28
-        versionCode = 37
-        versionName = "4.6"
+        versionCode = 1
+        versionName = "0.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -49,16 +48,6 @@ android {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-        pip {
-        }
-    }
-    productFlavors {
-    }
-}
-
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")
@@ -68,6 +57,8 @@ dependencies {
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // USB 串口（CP210x / CH34x / FTDI / CDC-ACM），ESP32 烧录与串口监视要用
+    implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
