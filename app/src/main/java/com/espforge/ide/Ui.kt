@@ -446,22 +446,7 @@ fun IdeScreen(c: IdeController) {
                             )
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("新建文件") },
-                                onClick = { menuOpen = false; c.openDialog("newFile", c.project?.dir) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("新建文件夹") },
-                                onClick = { menuOpen = false; c.openDialog("newFolder", c.project?.dir) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("重命名当前文件") },
-                                onClick = { menuOpen = false; c.active?.let { c.openDialog("renameNode", it) } },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("删除当前文件") },
-                                onClick = { menuOpen = false; c.active?.let { c.openDialog("deleteNode", it) } },
-                            )
+                            // 文件的新建/重命名/删除都在资源管理器里做（长按行/工具条），这里不再重复
                             DropdownMenuItem(
                                 text = { Text("切换断点（当前行）") },
                                 onClick = { menuOpen = false; c.js("CP.toggleBreakpointAtCursor()") },
@@ -609,11 +594,15 @@ private fun TabStrip(c: IdeController) {
                     .padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FileTypeIcon(f.name, false, false, 12.dp)
+                // 图标放进和文字行高一样高的 Box 里居中，避免 SVG 自带的上下留白导致看着没对齐
+                Box(Modifier.height(14.dp), contentAlignment = Alignment.Center) {
+                    FileTypeIcon(f.name, false, false, 12.dp)
+                }
                 Spacer(Modifier.width(5.dp))
                 Text(
                     text = f.name,
                     fontSize = 12.sp,
+                    lineHeight = 14.sp,
                     color = if (selected) Color(0xFFE6EAF2) else Muted,
                     maxLines = 1,
                 )
@@ -644,7 +633,6 @@ private class DragHost {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExplorerPanel(c: IdeController, modifier: Modifier) {
-    var projectMenu by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     val host = remember { DragHost() }
 
@@ -653,64 +641,6 @@ private fun ExplorerPanel(c: IdeController, modifier: Modifier) {
     } else null
 
     Column(modifier.background(Panel)) {
-        // 工程切换条
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(PanelAlt)
-                .clickable { projectMenu = true }
-                .padding(start = 10.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.FolderOpen, null, tint = Color(0xFFE0B25C), modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                c.project?.name ?: "未打开工程",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFE6EAF2),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(Icons.Filled.ArrowDropDown, null, tint = Muted, modifier = Modifier.size(18.dp))
-        }
-        DropdownMenu(expanded = projectMenu, onDismissRequest = { projectMenu = false }) {
-            c.projects.forEach { p ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (p.id == c.project?.id) Icons.Filled.FolderOpen else Icons.Filled.Folder,
-                                null,
-                                tint = if (p.id == c.project?.id) Accent else Muted,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(p.name, fontSize = 13.sp)
-                        }
-                    },
-                    onClick = {
-                        projectMenu = false
-                        if (p.id != c.project?.id) c.switchProject(p)
-                    },
-                )
-            }
-            HorizontalDivider(color = Stroke)
-            DropdownMenuItem(
-                text = { Text("＋ 新建工程…") },
-                onClick = { projectMenu = false; c.openDialog("newProject") },
-            )
-            DropdownMenuItem(
-                text = { Text("重命名当前工程…") },
-                onClick = { projectMenu = false; c.openDialog("renameProject") },
-            )
-            DropdownMenuItem(
-                text = { Text("删除当前工程…") },
-                onClick = { projectMenu = false; c.openDialog("deleteProject") },
-            )
-        }
-
         // 工具条
         Row(
             Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
@@ -770,7 +700,7 @@ private fun ExplorerPanel(c: IdeController, modifier: Modifier) {
                 if (c.files.isEmpty()) {
                     item {
                         Text(
-                            "空工程 · 点右上角 + 新建文件",
+                            "空工程 · 点上面工具条的 + 新建文件",
                             fontSize = 11.sp,
                             color = Color(0xFF4A5261),
                             modifier = Modifier.padding(14.dp),
@@ -1132,7 +1062,7 @@ private fun FlashContent(c: IdeController) {
             Text(
                 text = c.flashInfo,
                 fontSize = 11.sp,
-                color = if (c.flashing) Color(0xFFFFC857) else Muted,
+                color = Muted,
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -1182,7 +1112,7 @@ private fun SerialContent(c: IdeController) {
             Text(
                 text = if (c.serialOpen) c.serialLabel else "未连接 USB 串口",
                 fontSize = 10.5.sp,
-                color = if (c.serialOpen) Green else Muted,
+                color = Muted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -1226,11 +1156,7 @@ private fun BuildContent(c: IdeController) {
             Text(
                 text = c.chipLabel() + " · " + c.buildInfo,
                 fontSize = 11.sp,
-                color = when (c.buildOk) {
-                    true -> Green
-                    false -> Color(0xFFFF8A80)
-                    else -> Muted
-                },
+                color = Muted,
             )
             Spacer(Modifier.weight(1f))
             // 构建/清理/自检都放在上面那排图标里了，这里不再重复放文字按钮
@@ -1303,7 +1229,7 @@ private fun GitContent(c: IdeController) {
                 Text(
                     "⎇ ${c.gitBranch.ifBlank { "?" }}",
                     fontSize = 11.sp,
-                    color = Color(0xFF4EA1FF),
+                    color = Muted,
                     fontFamily = FontFamily.Monospace,
                 )
                 Spacer(Modifier.width(8.dp))

@@ -1318,8 +1318,6 @@ class IdeController(private val activity: MainActivity) {
                     (if (com.espforge.ide.term.Pty.loaded) "库已加载，forkpty/exec 失败" else "找不到 libptybridge.so") +
                     "\u001b[0m）\r\n"
             )
-        } else {
-            appendTerminal("\u001b[38;5;244m[pty ${session.info}]\u001b[0m\r\n")
         }
     }
 
@@ -1378,7 +1376,6 @@ class IdeController(private val activity: MainActivity) {
         }
         session = newSession()
         clearTerminal()
-        appendTerminal("\r\n")
         if (terminalReady) {
             terminalWorkingDir = cwd
             startSessionIn(cwd)
