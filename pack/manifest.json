@@ -36,12 +36,12 @@
     "tools/python/bin": 3
   },
   "sizes": {
-    "totalBytes": 1236028218,
+    "totalBytes": 1236028667,
     "totalFiles": 24351,
     "topLevel": {
       "esp-idf": 298331073,
       "glibc": 5293504,
-      "manifest.json": 3024,
+      "manifest.json": 3473,
       "tools": 932400617
     },
     "tools": {
@@ -52,7 +52,7 @@
       "tools/xtensa-esp32s3-elf": 407261550
     }
   },
-  "builtAt": "2026-11-25T23:50:13+0800",
+  "builtAt": "2026-11-25T23:55:12+0800",
   "entrypoints": {
     "idfPy": "esp-idf/tools/idf.py",
     "gccEsp32": "tools/xtensa-esp32-elf/bin/xtensa-esp32-elf-gcc",
@@ -67,13 +67,16 @@
     "IDF_PATH": "esp-idf",
     "IDF_COMPONENT_MANAGER": "0",
     "ESPSTUDIO_SKIP_DEP_CHECK": "1",
-    "IDF_PYTHON_ENV_PATH": "",
+    "IDF_PYTHON_ENV_PATH": "(unset)",
     "PREFIX": "tools/cmake",
     "PYTHONHOME": "tools/python",
     "PYTHONPATH": "tools/python-site",
     "LD_LIBRARY_PATH": "tools/python/lib:tools/cmake/lib",
-    "GLIBC_LIBRARY_PATH": "glibc/lib"
+    "GLIBC_LIBRARY_PATH": "glibc/lib",
+    "PATH": "tools/python/bin:tools/cmake/bin:tools/xtensa-esp32-elf/bin:tools/xtensa-esp32s3-elf/bin"
   },
+  "ldWrapperTemplate": "#!/system/bin/sh\nexec \"$BASE/glibc/lib/ld-linux-aarch64.so.1\" --library-path \"$BASE/glibc/lib\" \"$BASE/<真实ELF路径>\" \"$@\"",
+  "ldWrapperNote": "gcc execs libexec/.../cc1,cc1plus,collect2,lto1 by absolute path, so the wrapper must REPLACE the binary at its own path (keep the real one as *.real).",
   "patches": {
     "pass_": true,
     "platform_alias_android": true,
@@ -83,7 +86,7 @@
   "toolchainWrappers": "ld-linux-aarch64.so.1 --library-path <abs>/glibc/lib <abs>/tools/<chip>-elf/<real> \"$@\"",
   "zip": {
     "fileName": "esp-idf-5.2.5-arm64.zip",
-    "sizeBytes": 360624747,
-    "sha256": "4cbb75c1a137505af64e91edc83c172e7cd3d578219932a7d892f700d3c2431a"
+    "sizeBytes": 360624951,
+    "sha256": "66a39432767dbc7131c81194d4f6871960dae392fef00f2166613398168a4f13"
   }
 }

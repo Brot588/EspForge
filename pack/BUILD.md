@@ -15,11 +15,11 @@ xtensa 工具链（glibc/aarch64）+ bionic 版 cmake/ninja/make + bionic CPytho
 | 项目 | 值 |
 | --- | --- |
 | 文件名 | `esp-idf-5.2.5-arm64.zip` |
-| 字节数 | 360624747 |
+| 字节数 | 360624951 |
 | 大小 | 343.9 MiB (360.6 MB) |
-| SHA-256 | `4cbb75c1a137505af64e91edc83c172e7cd3d578219932a7d892f700d3c2431a` |
+| SHA-256 | `66a39432767dbc7131c81194d4f6871960dae392fef00f2166613398168a4f13` |
 | zip 条目数 | 24351 |
-| 构建时间 | 2026-11-25T23:50:13+0800 |
+| 构建时间 | 2026-11-25T23:55:12+0800 |
 
 ## 2. 体积构成（解压后 / zip 内压缩后）
 
@@ -166,12 +166,13 @@ xtensa 工具链（glibc/aarch64）+ bionic 版 cmake/ninja/make + bionic CPytho
    IDF_PATH=esp-idf
    IDF_COMPONENT_MANAGER=0
    ESPSTUDIO_SKIP_DEP_CHECK=1
-   IDF_PYTHON_ENV_PATH=
+   IDF_PYTHON_ENV_PATH=(unset)
    PREFIX=tools/cmake
    PYTHONHOME=tools/python
    PYTHONPATH=tools/python-site
    LD_LIBRARY_PATH=tools/python/lib:tools/cmake/lib
    GLIBC_LIBRARY_PATH=glibc/lib
+   PATH=tools/python/bin:tools/cmake/bin:tools/xtensa-esp32-elf/bin:tools/xtensa-esp32s3-elf/bin
    ```
 
    - `PYTHONHOME` 指向 `tools/python`：Termux python 编译前缀是 `/data/data/com.termux/files/usr`，

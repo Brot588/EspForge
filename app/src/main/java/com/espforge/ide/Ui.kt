@@ -115,6 +115,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -177,7 +178,8 @@ fun IdeScreen(c: IdeController) {
                             horizontalArrangement = Arrangement.End,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            // 外面这层 Box 只包住搜索框，浮窗才能锚在它正下方
+                            // Box 只包住搜索框本身：浮窗用 Popup 锚在它下方，
+                            // 左边缘对齐、零动画，不会有一瞬间盖住输入框
                             Box(Modifier.width(300.dp)) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -240,60 +242,62 @@ fun IdeScreen(c: IdeController) {
                                     }
                                 }
 
-                                // 结果浮窗：右边缘与搜索框对齐，向左展开，不占页面布局
-                                DropdownMenu(
-                                    expanded = c.searchOpen && c.searchResults.isNotEmpty(),
-                                    onDismissRequest = { },
-                                    modifier = Modifier
-                                        .width(420.dp)
-                                        .background(Color(0xFF1B2029)),
-                                    offset = DpOffset((-120).dp, 4.dp),
-                                    properties = PopupProperties(
-                                        focusable = false,
-                                        dismissOnClickOutside = false,
-                                        dismissOnBackPress = false,
-                                    ),
-                                ) {
-                                    Column(
-                                        Modifier
-                                            .heightIn(max = 300.dp)
-                                            .verticalScroll(rememberScrollState())
-                                            .padding(vertical = 2.dp)
+                                if (c.searchResults.isNotEmpty()) {
+                                    val gapPx = with(LocalDensity.current) { 40.dp.roundToPx() }
+                                    Popup(
+                                        alignment = Alignment.TopStart,
+                                        offset = IntOffset(0, gapPx),
+                                        properties = PopupProperties(focusable = false),
                                     ) {
-                                        Text(
-                                            text = c.searchResults.size.toString() + " 个结果" +
-                                                (if (c.searchSummary.isNotBlank()) " · " + c.searchSummary else ""),
-                                            fontSize = 10.sp,
-                                            color = Muted,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                        )
-                                        val root = c.project?.dir ?: File("/")
-                                        c.searchResults.take(200).forEach { h ->
-                                            val rel = Workspace.relativePath(root, File(h.path))
-                                            Row(
+                                        Surface(
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = Color(0xFF1B2029),
+                                            border = BorderStroke(1.dp, Color(0xFF2E3542)),
+                                            shadowElevation = 14.dp,
+                                            modifier = Modifier.width(330.dp),
+                                        ) {
+                                            Column(
                                                 Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        c.openHit(h)
-                                                        c.searchOpen = false
-                                                    }
-                                                    .padding(horizontal = 12.dp, vertical = 5.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
+                                                    .heightIn(max = 300.dp)
+                                                    .verticalScroll(rememberScrollState())
+                                                    .padding(vertical = 4.dp)
                                             ) {
                                                 Text(
-                                                    text = rel + ":" + h.line,
-                                                    fontSize = 10.5.sp,
-                                                    color = Accent,
-                                                    maxLines = 1,
+                                                    text = c.searchResults.size.toString() + " 个结果" +
+                                                        (if (c.searchSummary.isNotBlank()) " · " + c.searchSummary else ""),
+                                                    fontSize = 10.sp,
+                                                    color = Muted,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
                                                 )
-                                                Spacer(Modifier.width(10.dp))
-                                                Text(
-                                                    text = h.text.trim(),
-                                                    fontSize = 10.5.sp,
-                                                    color = Color(0xFFC7CEDA),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
+                                                val root = c.project?.dir ?: File("/")
+                                                c.searchResults.take(200).forEach { h ->
+                                                    val rel = Workspace.relativePath(root, File(h.path))
+                                                    Row(
+                                                        Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                c.openHit(h)
+                                                                c.searchOpen = false
+                                                            }
+                                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        Text(
+                                                            text = rel + ":" + h.line,
+                                                            fontSize = 10.5.sp,
+                                                            color = Accent,
+                                                            maxLines = 1,
+                                                        )
+                                                        Spacer(Modifier.width(10.dp))
+                                                        Text(
+                                                            text = h.text.trim(),
+                                                            fontSize = 10.5.sp,
+                                                            color = Color(0xFFC7CEDA),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
