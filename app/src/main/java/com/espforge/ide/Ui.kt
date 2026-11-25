@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
@@ -365,29 +366,11 @@ fun IdeScreen(c: IdeController) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = "构建", tint = idle)
                         }
                     }
-                    IconButton(onClick = { c.flash() }) {
-                        Icon(
-                            Icons.Filled.FlashOn,
-                            contentDescription = "烧录",
-                            tint = if (c.flashing) Green else idle,
-                        )
-                    }
-                    IconButton(onClick = { c.connectSerial() }) {
-                        Icon(
-                            Icons.Filled.Usb,
-                            contentDescription = "USB 串口",
-                            tint = if (c.serialOpen) Green else idle,
-                        )
-                    }
-                    IconButton(onClick = { c.startDebug() }) {
-                        Icon(
-                            Icons.Filled.BugReport,
-                            contentDescription = "调试",
-                            tint = if (c.debugActive) Green else idle,
-                        )
-                    }
-                    IconButton(onClick = { c.js("CP.requestSave()") }) {
-                        Icon(Icons.Filled.Save, contentDescription = "保存", tint = idle)
+                    // 保存只在打开了文件时出现，避免点了没反应
+                    if (c.active != null) {
+                        IconButton(onClick = { c.js("CP.requestSave()") }) {
+                            Icon(Icons.Filled.Save, contentDescription = "保存", tint = idle)
+                        }
                     }
                     IconButton(onClick = {
                         c.showTerminal = !c.showTerminal
@@ -995,40 +978,32 @@ private fun BottomDock(c: IdeController, panelHeight: Int) {
 
             Spacer(Modifier.weight(1f))
 
+            // 每个 Tab 的右侧动作统一：28dp 图标、16dp、只有图标没有文字，
+            // 主操作在左、危险操作(关闭/断开/停止)在右且用红色。
             if (c.bottomTab == TERMINAL_TAB) {
-                IconButton(onClick = { c.ensureTerminal(); c.clearTerminal() }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Filled.Refresh, null, tint = Muted, modifier = Modifier.size(13.dp))
-                }
-                IconButton(onClick = { c.restartTerminal() }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Filled.Terminal, null, tint = Muted, modifier = Modifier.size(13.dp))
-                }
-                IconButton(onClick = { c.showTerminal = false }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Filled.Close, null, tint = Muted, modifier = Modifier.size(13.dp))
-                }
+                DockAction(Icons.Filled.Delete, "清屏") { c.clearTerminal() }
+                DockAction(Icons.Filled.Refresh, "重启会话") { c.restartTerminal() }
+                DockAction(Icons.Filled.Close, "关闭面板") { c.showTerminal = false }
             } else if (c.bottomTab == BUILD_TAB) {
-                DebugBtn(Icons.Filled.PlayArrow, "构建", Green) { c.build() }
-                DebugBtn(Icons.Filled.Refresh, "清理") { c.cleanBuild() }
-                DebugBtn(Icons.Filled.Build, "自检") { c.runSelfCheck() }
-                DebugBtn(Icons.Filled.Stop, "停止", Color(0xFFFF8A80)) { if (c.building) c.stopBuild() }
+                DockAction(Icons.Filled.PlayArrow, "构建", Green) { c.build() }
+                DockAction(Icons.Filled.Refresh, "清理") { c.cleanBuild() }
+                DockAction(Icons.Filled.Build, "自检") { c.runSelfCheck() }
+                DockAction(Icons.Filled.Stop, "停止", Color(0xFFFF8A80), enabled = c.building) { c.stopBuild() }
             } else if (c.bottomTab == FLASH_TAB) {
-                DebugBtn(Icons.Filled.FlashOn, "烧录", Color(0xFFFFC857)) { c.flash() }
-                DebugBtn(Icons.Filled.Build, "构建") { c.build() }
+                // 烧录自己会在没连串口时去连；这里不再放「构建」（构建页有）
+                DockAction(Icons.Filled.FlashOn, "烧录", Color(0xFFFFC857), enabled = !c.flashing) { c.flash() }
+                DockAction(Icons.Filled.Delete, "清空烧录日志") { c.clearFlashLog() }
             } else if (c.bottomTab == SERIAL_TAB) {
-                DebugBtn(Icons.Filled.Usb, "连接串口", Green) { c.scanPorts(); c.connectSerial() }
-                DebugBtn(Icons.Filled.Refresh, "复位芯片") { c.serialReset() }
-                DebugBtn(Icons.Filled.Download, "进入下载模式") { c.serialToBootloader() }
-                DebugBtn(Icons.Filled.Close, "断开", Color(0xFFFF8A80)) { c.disconnectSerial() }
-            } else {
-                if (c.debugActive) {
-                    if (c.debugPaused) {
-                        DebugBtn(Icons.Filled.PlayArrow, "继续", Green) { c.debugContinue() }
-                        DebugBtn(Icons.Filled.SkipNext, "单步跳过") { c.debugStepOver() }
-                        DebugBtn(Icons.Filled.ArrowDownward, "单步进入") { c.debugStepInto() }
-                        DebugBtn(Icons.Filled.ArrowUpward, "跳出") { c.debugStepOut() }
-                    }
-                    DebugBtn(Icons.Filled.Stop, "停止", Color(0xFFFF8A80)) { c.debugStop() }
+                if (c.serialOpen) {
+                    DockAction(Icons.Filled.Close, "断开串口", Color(0xFFFF8A80)) { c.disconnectSerial() }
+                } else {
+                    DockAction(Icons.Filled.Usb, "连接串口", Green) { c.connectSerial() }
                 }
+                DockAction(Icons.Filled.Refresh, "复位芯片", enabled = c.serialOpen) { c.serialReset() }
+                DockAction(Icons.Filled.Download, "进入下载模式", enabled = c.serialOpen) { c.serialToBootloader() }
+                DockAction(Icons.Filled.Delete, "清屏", enabled = c.serialOpen) { c.serialJs("CP.term.clear()") }
             }
+            // 调试 Tab 的「开始调试」在面板里给说明，不放只会弹提示的图标按钮
         }
         HorizontalDivider(color = Stroke)
         Box(Modifier.fillMaxSize()) {
@@ -1084,9 +1059,24 @@ private fun DockTab(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DebugBtn(icon: ImageVector, label: String, tint: Color = Muted, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(28.dp)) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
+private fun DockAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color = Muted,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = { if (enabled) onClick() },
+        enabled = enabled,
+        modifier = Modifier.size(28.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = if (enabled) tint else Color(0xFF3B4250),
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
@@ -1113,8 +1103,6 @@ private fun FlashContent(c: IdeController) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 260.dp),
             )
-            SmallAction("烧录") { c.flash() }
-            SmallAction("扫描串口") { c.scanPorts() }
         }
         Spacer(Modifier.height(4.dp))
         LinearProgressIndicator(
@@ -1170,7 +1158,6 @@ private fun SerialContent(c: IdeController) {
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
-            SmallAction("清屏") { c.serialJs("CP.term.clear()") }
         }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -1457,25 +1444,16 @@ private fun DebugContent(c: IdeController) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "点顶栏 🐞 开始调试",
+                    "调试还没接入",
                     fontSize = 12.sp,
                     color = Color(0xFFC2C9D6),
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Python / JavaScript / C / Rust · 点行号设断点",
+                    "下一步做串口 gdbstub（run/GdbClient.kt + run/DwarfInfo.kt 已经写好，差接线）",
                     fontSize = 11.sp,
                     color = Muted,
                 )
-                val name = c.active?.name ?: ""
-                if (name.endsWith(".c") || name.endsWith(".rs")) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "C / Rust 首次调试要解压工具链，需要稍等一下",
-                        fontSize = 10.sp,
-                        color = Muted,
-                    )
-                }
             }
         }
         return

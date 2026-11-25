@@ -1048,6 +1048,12 @@ class IdeController(private val activity: MainActivity) {
         flashLog = flashBuf.toString()
     }
 
+    /** 清空烧录日志 */
+    fun clearFlashLog() {
+        flashBuf.setLength(0)
+        flashLog = ""
+    }
+
     /** 枚举当前插着的 USB 串口 */
     fun scanPorts() {
         serialPorts = com.espforge.ide.serial.UsbSerial.list(activity)
