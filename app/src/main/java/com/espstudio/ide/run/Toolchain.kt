@@ -45,8 +45,8 @@ object Toolchain {
     val glibcDir: File get() = File(root, "glibc")
     val glibcLoader: File get() = File(glibcDir, "lib/ld-linux-aarch64.so.1")
 
-    fun xtensaDir() = File(root, "tools/xtensa-esp-elf")
-    fun ulpDir() = File(root, "tools/esp32ulp-elf")
+    /** 目标芯片对应的工具链目录：tools/xtensa-esp32-elf 或 tools/xtensa-esp32s3-elf */
+    fun xtensaDir(chip: String = "esp32") = File(root, "tools/xtensa-$chip-elf")
     fun cmakeDir() = File(root, "tools/cmake")
     fun pythonDir() = File(root, "tools/python")
     fun pythonSite() = File(root, "tools/python-site")
@@ -64,7 +64,7 @@ object Toolchain {
         idfPath.isDirectory &&
         pythonExe().isFile &&
         glibcLoader.isFile &&
-        File(xtensaDir(), "bin/xtensa-esp-elf-gcc.real").isFile
+        File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc.real").isFile
 
     /** manifest 里的信息；资源包缺失时返回 null */
     fun manifest(): JSONObject? = try {
@@ -89,7 +89,9 @@ object Toolchain {
         if (!pythonExe().isFile) out.add("tools/python/bin/python3")
         if (!cmakeExe().isFile) out.add("tools/cmake/bin/cmake")
         if (!glibcLoader.isFile) out.add("glibc/lib/ld-linux-aarch64.so.1")
-        if (!File(xtensaDir(), "bin/xtensa-esp-elf-gcc").isFile) out.add("tools/xtensa-esp-elf/bin/xtensa-esp-elf-gcc")
+        if (!File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc").isFile) {
+            out.add("tools/xtensa-esp32-elf/bin/xtensa-esp32-elf-gcc")
+        }
         return out
     }
 
@@ -102,13 +104,28 @@ object Toolchain {
     @Synchronized
     fun importPack(uri: Uri, onStatus: (String) -> Unit = {}): Boolean {
         val ctx = App.ctx
+        return importPack({ ctx.contentResolver.openInputStream(uri) }, onStatus)
+    }
+
+    /** 从本地文件导入（测试/侧载用：/sdcard/Android/data/<pkg>/files/pack.zip） */
+    @Synchronized
+    fun importPack(file: File, onStatus: (String) -> Unit = {}): Boolean {
+        if (!file.isFile) {
+            onStatus("文件不存在: ${file.absolutePath}")
+            return false
+        }
+        return importPack({ file.inputStream() }, onStatus)
+    }
+
+    @Synchronized
+    fun importPack(open: () -> InputStream?, onStatus: (String) -> Unit = {}): Boolean {
+        val ctx = App.ctx
         val staging = File(ctx.filesDir, "pack-staging")
         if (staging.exists()) staging.deleteRecursively()
         staging.mkdirs()
         onStatus("读取资源包…")
         return try {
-            val input: InputStream = ctx.contentResolver.openInputStream(uri)
-                ?: throw IllegalStateException("无法打开所选文件")
+            val input: InputStream = open() ?: throw IllegalStateException("无法打开所选文件")
             var lastTick = 0L
             var bytes = 0L
             BufferedInputStream(input, 1 shl 16).use { raw ->
@@ -151,6 +168,8 @@ object Toolchain {
                 staging.copyRecursively(root, overwrite = true)
                 staging.deleteRecursively()
             }
+            onStatus("修正文件权限…")
+            ensureExecutable { msg -> onStatus(msg) }
             onStatus("生成 glibc 包装脚本…")
             wrapGlibc { msg -> onStatus(msg) }
             File(root, ".ok-$PACK_VERSION").writeText("ok")
@@ -164,6 +183,47 @@ object Toolchain {
             onStatus("导入失败: ${t.message}")
             false
         }
+    }
+
+    /**
+     * ZipInputStream 不还原文件权限，解压出来的二进制默认是 0644，直接 exec 会
+     * Permission denied。所以导入后要把所有该能执行的地方补成 755。
+     */
+    @Synchronized
+    fun ensureExecutable(onStatus: (String) -> Unit = {}): Int {
+        var count = 0
+        fun fix(dir: File) {
+            val files = dir.listFiles() ?: return
+            for (f in files) {
+                if (f.isDirectory) continue
+                try {
+                    if (f.setExecutable(true, false)) count++
+                    f.setReadable(true, false)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        // glibc 的 loader 和 .so 都要能读，loader 还要能执行
+        val glibcLib = File(glibcDir, "lib")
+        if (glibcLib.isDirectory) fix(glibcLib)
+        // 各工具链的 bin 目录
+        val bins = ArrayList<File>()
+        File(root, "tools").listFiles()?.forEach { t ->
+            File(t, "bin").takeIf { it.isDirectory }?.let { bins.add(it) }
+            File(t, "lib").takeIf { it.isDirectory }?.let { bins.add(it) }
+            t.listFiles()?.forEach { sub ->
+                File(sub, "bin").takeIf { it.isDirectory }?.let { bins.add(it) }
+            }
+            File(t, "libexec").takeIf { it.isDirectory }?.let { le ->
+                le.listFiles()?.forEach { ver ->
+                    ver.listFiles()?.forEach { inner -> if (inner.isDirectory) bins.add(inner) }
+                }
+            }
+        }
+        bins.forEach { fix(it) }
+        // python 的 .so 只需要可读，但顺手一起处理
+        if (count > 0) onStatus("修正 $count 个文件的可执行权限")
+        return count
     }
 
     // ---------------------------------------------------------- glibc wrapper
@@ -181,18 +241,16 @@ object Toolchain {
         val loader = glibcLoader.absolutePath
         val libPath = glibcDir.absolutePath + "/lib"
         var count = 0
-        val dirs = listOf(
-            File(xtensaDir(), "bin"),
-            File(xtensaDir(), "xtensa-esp-elf/bin"),
-            File(ulpDir(), "bin"),
-            File(ulpDir(), "esp32ulp-elf/bin"),
-        ).filter { it.isDirectory } +
-            (File(xtensaDir(), "libexec/gcc").listFiles()?.flatMap { ver ->
-                ver.listFiles()?.filter { it.isDirectory } ?: emptyList()
-            } ?: emptyList()) +
-            (File(ulpDir(), "libexec/gcc").listFiles()?.flatMap { ver ->
-                ver.listFiles()?.filter { it.isDirectory } ?: emptyList()
-            } ?: emptyList())
+        val roots = listOf(xtensaDir("esp32"), xtensaDir("esp32s3")).filter { it.isDirectory }
+        val dirs = ArrayList<File>()
+        for (tcRoot in roots) {
+            val target = tcRoot.name // xtensa-esp32-elf / xtensa-esp32s3-elf
+            dirs.add(File(tcRoot, "bin"))
+            dirs.add(File(tcRoot, "$target/bin"))
+            File(tcRoot, "libexec/gcc").listFiles()?.forEach { ver ->
+                ver.listFiles()?.filter { it.isDirectory }?.let { dirs.addAll(it) }
+            }
+        }
 
         for (dir in dirs) {
             val files = dir.listFiles() ?: continue
@@ -221,6 +279,13 @@ object Toolchain {
         }
         if (count > 0) onStatus("已包装 $count 个工具链程序")
         else onStatus("工具链包装已是最新")
+        // 包装完成后如果关键文件都在，就落一个就绪标记
+        if (count > 0 && idfPath.isDirectory && pythonExe().isFile && cmakeExe().isFile) {
+            try {
+                File(root, ".ok-$PACK_VERSION").writeText("ok")
+            } catch (_: Throwable) {
+            }
+        }
         return count
     }
 
@@ -256,14 +321,13 @@ object Toolchain {
     val gitExe: File get() = File(gitRoot(), "bin/git")
 
     /** 构建 / 烧录时统一使用的环境变量 */
-    fun env(extra: Map<String, String> = emptyMap()): Map<String, String> {
+    fun env(chip: String = "esp32", extra: Map<String, String> = emptyMap()): Map<String, String> {
         home.mkdirs()
         tmp.mkdirs()
         idfTools.mkdirs()
         val path = listOf(
             File(pythonDir(), "bin").absolutePath,
-            File(xtensaDir(), "bin").absolutePath,
-            File(ulpDir(), "bin").absolutePath,
+            File(xtensaDir(chip), "bin").absolutePath,
             File(cmakeDir(), "bin").absolutePath,
             File(gitRoot(), "bin").absolutePath,
             "/system/bin",
@@ -281,7 +345,13 @@ object Toolchain {
         m["IDF_PYTHON_ENV_PATH"] = pythonDir().absolutePath
         // 离线：不启用组件管理器，也不去网上拉东西
         m["IDF_COMPONENT_MANAGER"] = "0"
-        m["ESP_IDF_VERSION"] = manifest()?.optString("idfVersion", "5.5.1") ?: "5.5.1"
+        m["IDF_TARGET"] = chip
+        m["ESP_IDF_VERSION"] = manifest()?.optString("idfVersion", "5.2.5") ?: "5.2.5"
+        // IDF 按 venv 里的 python 校验依赖版本；离线包把依赖放在 PYTHONPATH 里，跳过这个校验
+        m["IDF_PYTHON_CHECK_CONSTRAINTS"] = "no"
+        m["ESPSTUDIO_SKIP_DEP_CHECK"] = "1"
+        // Termux 版 cmake 会读 $PREFIX/include/android/api-level.h
+        m["PREFIX"] = cmakeDir().absolutePath
         m["TERM"] = "xterm-256color"
         m.putAll(extra)
         return m
@@ -293,7 +363,10 @@ object Toolchain {
         val probes = listOf(
             "python3" to listOf(pythonExe().absolutePath, "--version"),
             "cmake" to listOf(cmakeExe().absolutePath, "--version"),
-            "xtensa-gcc" to listOf(File(xtensaDir(), "bin/xtensa-esp-elf-gcc").absolutePath, "--version"),
+            "xtensa-gcc" to listOf(
+                File(xtensaDir("esp32"), "bin/xtensa-esp32-elf-gcc").absolutePath,
+                "--version",
+            ),
         )
         for ((name, cmd) in probes) {
             out.add(name to runCapture(cmd, idfPath, 15000).trim().lineSequence().firstOrNull().orEmpty())
@@ -394,6 +467,30 @@ object Toolchain {
             onStatus("git 解压失败: ${t.message}")
             false
         }
+    }
+
+    /**
+     * IDF 会检查 <IDF_TOOLS_PATH>/python_env/<idf>_<py>_env/bin/python 是否存在。
+     * 我们不建真实 venv（依赖在 PYTHONPATH 里），只造一个转发到 pack python 的壳。
+     */
+    fun ensureIdfPythonEnv(): File? {
+        ensureDirs()
+        val idfVer = manifest()?.optString("idfVersion", "5.2.5") ?: "5.2.5"
+        val idfTag = "idf" + idfVer.split(".").take(2).joinToString(".")
+        val pyTag = "py" + runCapture(
+            listOf(pythonExe().absolutePath, "-c", "import sys;print('%d.%d'%sys.version_info[:2])"),
+            root, 15000,
+        ).trim().ifBlank { "3.11" }
+        val env = File(idfTools, "python_env/${idfTag}_${pyTag}_env")
+        val bin = File(env, "bin")
+        bin.mkdirs()
+        val shim = "#!/system/bin/sh\nexec \"" + pythonExe().absolutePath + "\" \"\$@\"\n"
+        for (name in listOf("python", "python3")) {
+            val f = File(bin, name)
+            if (!f.isFile || f.readText() != shim) f.writeText(shim)
+            f.setExecutable(true, false)
+        }
+        return bin
     }
 
     /** Termux 二进制有时需要一个可写的 HOME 才能正常工作 */

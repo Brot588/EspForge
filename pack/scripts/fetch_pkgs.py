@@ -13,7 +13,9 @@ WANT = {
     'debian': ['libc6', 'libstdc++6', 'libgcc-s1', 'zlib1g'],
     'termux': ['python', 'libandroid-support', 'libandroid-posix-semaphore', 'libbz2', 'libcrypt',
                'libexpat', 'libffi', 'liblzma', 'libsqlite', 'ncurses', 'ncurses-ui-libs',
-               'openssl', 'readline', 'zlib', 'gdbm', 'ca-certificates'],
+               'openssl', 'readline', 'zlib', 'gdbm', 'ca-certificates',
+               'python-cryptography', 'python-psutil', 'python-cffi', 'python-pip',
+               'libc++', 'zstd', 'libandroid-glob'],
 }
 
 

@@ -508,6 +508,21 @@ class IdeController(private val activity: MainActivity) {
         } else {
             Toolchain.packSummary()
         }
+        // 资源包已经解压但 wrapper 没生成（比如上次中途失败）→ 补一次
+        if (!packReady && File(Toolchain.root, "manifest.json").isFile && Toolchain.glibcLoader.isFile) {
+            if (File(Toolchain.xtensaDir(), "bin/xtensa-esp-elf-gcc").isFile) {
+                Thread({
+                    val n = Toolchain.wrapGlibc { msg -> ui { packStatus = msg } }
+                    ui {
+                        packReady = Toolchain.isReady()
+                        if (packReady) {
+                            packStatus = Toolchain.packSummary()
+                            appendBuild("工具链包装脚本已生成（$n 个）")
+                        }
+                    }
+                }, "wrap-glibc").start()
+            }
+        }
     }
 
     fun importPack(uri: Uri) {
@@ -527,6 +542,35 @@ class IdeController(private val activity: MainActivity) {
     /** 拉起系统文件选择器导入资源包 */
     fun pickPack() {
         activity.launchPackImport()
+    }
+
+    /**
+     * 侧载路径：/sdcard/Android/data/<pkg>/files/pack.zip 存在时直接导入，
+     * 不用走文件选择器（adb push 之后可以在界面里点这个）。
+     */
+    fun externalPackFile(): File? {
+        val dir = activity.getExternalFilesDir(null) ?: return null
+        val f = File(dir, "pack.zip")
+        return if (f.isFile) f else null
+    }
+
+    fun importSideLoadedPack() {
+        val f = externalPackFile()
+        if (f == null) {
+            toast = "没找到 " + (activity.getExternalFilesDir(null)?.absolutePath ?: "外部目录") + "/pack.zip"
+            return
+        }
+        if (packBusy) return
+        packBusy = true
+        packStatus = "准备导入…"
+        Thread({
+            val ok = Toolchain.importPack(f) { msg -> ui { packStatus = msg } }
+            ui {
+                packBusy = false
+                refreshPack()
+                toast = if (ok) "资源包已安装" else packStatus
+            }
+        }, "pack-import").start()
     }
 
     fun chooseChip(id: String) {
@@ -554,6 +598,7 @@ class IdeController(private val activity: MainActivity) {
             return
         }
         saveBuffer(null)
+        Toolchain.ensureIdfPythonEnv()
         building = true
         buildOk = null
         buildBuf.setLength(0)
@@ -570,7 +615,7 @@ class IdeController(private val activity: MainActivity) {
                     "build",
                 ),
                 p.dir,
-                Toolchain.env(mapOf("IDF_TARGET" to chip)),
+                Toolchain.env(chip),
             ) { line -> ui { appendBuild(line) } }
             val secs = (System.currentTimeMillis() - started) / 1000
             ui {
@@ -602,7 +647,7 @@ class IdeController(private val activity: MainActivity) {
                 "fullclean",
             ),
             p.dir,
-            Toolchain.env(mapOf("IDF_TARGET" to chip)),
+            Toolchain.env(chip),
         ) { line -> appendBuild(line) }
         buildOk = null
         buildInfo = if (code == 0) "已清理构建目录" else "清理失败（$code）"
@@ -1499,5 +1544,6 @@ class IdeController(private val activity: MainActivity) {
         session = newSession()
         val p = Projects.bootstrap()
         switchProject(p, persist = false)
+        refreshPack()
     }
 }

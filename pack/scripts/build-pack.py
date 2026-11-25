@@ -197,12 +197,16 @@ def stage_idf(force=False):
 
 
 # ----------------------------------------------------------------------------- stage: toolchains
-def tar_extract_materialised(tar_path, dest, strip=0):
-    """Extract tar (xz/gz) materialising symlinks and hardlinks as real file copies."""
+def tar_extract_materialised(tar_path, dest, strip=0, skip_prefixes=()):
+    """Extract tar (xz/gz) materialising symlinks and hardlinks as real file copies.
+
+    skip_prefixes: paths (after stripping) that are not extracted at all.
+    """
     t = tarfile.open(tar_path, 'r:*')
     members = t.getmembers()
     links = []
     nfiles = 0
+    nskipped = 0
     for m in members:
         name = m.name
         parts = name.split('/')
@@ -211,6 +215,9 @@ def tar_extract_materialised(tar_path, dest, strip=0):
         if not parts or not parts[-1]:
             continue
         rel = '/'.join(parts)
+        if any(rel.startswith(p) for p in skip_prefixes):
+            nskipped += 1
+            continue
         destp = os.path.join(dest, rel.replace('/', os.sep))
         if m.isdir():
             os.makedirs(destp, exist_ok=True)
@@ -249,13 +256,17 @@ def tar_extract_materialised(tar_path, dest, strip=0):
             shutil.copyfile(src, d)
         else:
             log('   !! unresolved link %s -> %s' % (rel, resolved))
-    return dict(files=nfiles, links=len(links))
+    return dict(files=nfiles, links=len(links), skipped=nskipped)
 
 
 def prune_toolchain(root):
-    """Remove gdb and docs; never touch .a / .o / ELF binaries used by the compiler."""
+    """Remove gdb and docs; never touch .a / .o / ELF binaries used by the compiler.
+
+    Also drops lto-dump (25 MB inspection tool that only pretty-prints LTO IL; the LTO
+    pipeline itself uses libexec/gcc/.../lto1, which is kept).
+    """
     killed = []
-    for pat in ('bin/*gdb*', 'share/doc', 'share/man', 'share/info'):
+    for pat in ('bin/*gdb*', 'bin/*lto-dump*', 'share/doc', 'share/man', 'share/info'):
         for p in glob.glob(os.path.join(root, pat)):
             killed.append(os.path.relpath(p, root).replace(os.sep, '/'))
             rm(p)
@@ -278,12 +289,22 @@ def stage_xtensa(force=False):
     rm(P_XTENSA)
     os.makedirs(P_XTENSA, exist_ok=True)
     log('[xtensa] extracting ...')
-    info = tar_extract_materialised(XTENSA_TXZ, P_XTENSA, strip=0)
+    # tarball root is the toolchain prefix (bin/, lib/, share/, xtensa-esp-elf/ sysroot,
+    # picolibc/). strip=1 so the staged dir is directly tools/xtensa-esp-elf/bin/...
+    # picolibc/ is a complete second sysroot (~364 MB) only used when CONFIG_LIBC_PICOLIBC
+    # is enabled; ESP-IDF's default libc is newlib, so it is dropped to fit the size budget.
+    info = tar_extract_materialised(XTENSA_TXZ, P_XTENSA, strip=1,
+                                    skip_prefixes=('picolibc/',))
     killed = prune_toolchain(P_XTENSA)
     sz, nf = dir_stats(P_XTENSA)
-    log('[xtensa] files=%d links=%d pruned=%s' % (info['files'], info['links'], killed))
+    log('[xtensa] files=%d links=%d skipped=%d pruned=%s' % (info['files'], info['links'],
+                                                             info['skipped'], killed))
     log('[xtensa] size %.1f MB / %d files' % (sz / 1024 ** 2, nf))
-    JSON_OUT.setdefault('stages', {})['xtensa'] = dict(files=nf, bytes=sz, pruned=killed, **info)
+    JSON_OUT.setdefault('stages', {})['xtensa'] = dict(files=nf, bytes=sz, pruned=killed,
+                                                       links=info['links'],
+                                                       skipped=info['skipped'],
+                                                       extracted=info['files'],
+                                                       dropped=['picolibc/ (second sysroot, unused by default newlib builds)'])
     lock('xtensa')
 
 
@@ -302,11 +323,33 @@ def stage_ulp(force=False):
     killed = prune_toolchain(P_ULP)
     sz, nf = dir_stats(P_ULP)
     log('[ulp] files=%d links=%d pruned=%s size %.1f MB' % (info['files'], info['links'], killed, sz / 1024 ** 2))
-    JSON_OUT.setdefault('stages', {})['ulp'] = dict(files=nf, bytes=sz, pruned=killed, **info)
+    JSON_OUT.setdefault('stages', {})['ulp'] = dict(files=nf, bytes=sz, pruned=killed,
+                                                    links=info['links'],
+                                                    extracted=info['files'])
     lock('ulp')
 
 
 # ----------------------------------------------------------------------------- stage: cmake
+def copy_bionic_libs(dest, specs):
+    """Copy specific .so files out of Termux debs into dest (bionic runtime deps that
+    cmake.zip does not bundle: libc++_shared.so, libz.so.1, ...)."""
+    got = []
+    for pkg, names in specs:
+        d = find_deb(pkg)
+        if not d:
+            log('[cmake] !! deb missing for %s' % pkg)
+            continue
+        u = deb_usr_root(d, pkg)
+        for n in names:
+            p = os.path.join(u, 'lib', n)
+            if os.path.isfile(p):
+                shutil.copy2(p, os.path.join(dest, n))
+                got.append(n)
+            else:
+                log('[cmake] !! %s not found in %s' % (n, pkg))
+    return got
+
+
 def stage_cmake(force=False):
     if locked('cmake') and not force:
         log('[cmake] already staged')
@@ -330,16 +373,19 @@ def stage_cmake(force=False):
         with z.open(i) as src, open(dest, 'wb') as out:
             shutil.copyfileobj(src, out, 1 << 20)
         n += 1
+    # cmake/ninja DT_NEEDED libc++_shared.so; cmake DT_NEEDED libz.so.1 (Android only ships libz.so)
+    extra = copy_bionic_libs(os.path.join(P_CMAKE, 'lib'),
+                             [('libc++', ['libc++_shared.so']), ('zlib', ['libz.so.1'])])
     sz, nf = dir_stats(P_CMAKE)
-    log('[cmake] extracted %d entries, %.1f MB' % (n, sz / 1024 ** 2))
-    JSON_OUT.setdefault('stages', {})['cmake'] = dict(files=nf, bytes=sz)
+    log('[cmake] extracted %d entries + %s, %.1f MB' % (n, extra, sz / 1024 ** 2))
+    JSON_OUT.setdefault('stages', {})['cmake'] = dict(files=nf, bytes=sz, added_libs=extra)
     lock('cmake')
 
 
 # ----------------------------------------------------------------------------- stage: python
 TERMUX_DEBS = ['python', 'libandroid-support', 'libandroid-posix-semaphore', 'libbz2', 'libcrypt',
                'libexpat', 'libffi', 'liblzma', 'libsqlite', 'ncurses', 'ncurses-ui-libs',
-               'openssl', 'readline', 'zlib', 'gdbm']
+               'openssl', 'readline', 'zlib', 'gdbm', 'libc++', 'zstd', 'libandroid-glob']
 TERMUX_EXTRA = ['python-cryptography', 'python-psutil']
 TERMUX_PREFIX = os.path.join('data', 'data', 'com.termux', 'files', 'usr')
 TERMINFO_KEEP = ('x', 'v', 'a', 'd', 's', 't', 'r')
@@ -602,22 +648,19 @@ def stage_site(force=False):
     log('[site] installing %d packages ...' % len(SITE_PKGS))
     pending = list(SITE_PKGS)
     rounds = 0
-    while pending and rounds < 4:
+    done = set()
+    while pending and rounds < 6:
         rounds += 1
         for pkg in pending:
+            if pkg in done:
+                continue
             how = site_install(pkg, P_SITE)
             result[pkg] = how
+            done.add(pkg)
             log('   %-28s %s' % (pkg, how))
-        pending = []
         # resolve transitive deps that pip never saw because of --no-deps
         aud = audit_site()
-        for dep in sorted(aud['missing']):
-            if dep in result:
-                continue
-            result[dep] = site_install(dep, P_SITE)
-            log('   dep %-24s %s' % (dep, result[dep]))
-            pending.append(dep)
-        pending = []
+        pending = [d for d in sorted(aud['missing']) if d not in done]
     # vendor sdist-only pure packages
     for pkg, (sub, mod) in SDIST_VENDORED.items():
         info = vendor_sdist(pkg, sub, mod, P_SITE)
@@ -739,17 +782,18 @@ def exec_mode(path):
     return 0o644
 
 
-def make_zip():
+def make_zip(level=9):
     rows = collect_zip_entries()
     log('[zip] %d entries -> %s' % (len(rows), ZIP_PATH))
     rm(ZIP_PATH)
     t0 = time.time()
     fixed_time = (2025, 1, 1, 0, 0, 0)
-    with zipfile.ZipFile(ZIP_PATH, 'w', zipfile.ZIP_DEFLATED, compresslevel=6,
+    with zipfile.ZipFile(ZIP_PATH, 'w', zipfile.ZIP_DEFLATED, compresslevel=level,
                          allowZip64=True) as zf:
         for i, (rel, p) in enumerate(rows, 1):
             zi = zipfile.ZipInfo(rel, date_time=fixed_time)
             zi.compress_type = zipfile.ZIP_DEFLATED
+            zi._compresslevel = level      # required: ZipFile.open() ignores the ctor value
             mode = exec_mode(p)
             zi.external_attr = (mode & 0xFFFF) << 16
             zi.file_size = os.path.getsize(p)
@@ -788,3 +832,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

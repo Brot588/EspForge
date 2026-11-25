@@ -1522,10 +1522,19 @@ private fun IdeDialogs(c: IdeController) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    c.closeDialog()
-                    c.pickPack()
-                }) { Text("选择 zip 导入…") }
+                Row {
+                    val side = c.externalPackFile()
+                    if (side != null) {
+                        TextButton(onClick = {
+                            c.closeDialog()
+                            c.importSideLoadedPack()
+                        }) { Text("导入 pack.zip") }
+                    }
+                    TextButton(onClick = {
+                        c.closeDialog()
+                        c.pickPack()
+                    }) { Text("选择 zip…") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { c.closeDialog() }) { Text("关闭") }
