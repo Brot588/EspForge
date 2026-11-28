@@ -37,10 +37,11 @@ CLI（run-as）：同一套资源包 + Toolchain.env() 也通过（用于对照�
 
 ## 二、工具链与构建环境
 
-构建用的工具链不在仓库里，用 dsh-androidforge 插件自带的那套：
+构建用的工具链不在仓库里，用本机 `D:\DSH\toolchain\android` 那套
+（原来是 dsh-androidforge 插件自带的，插件已卸载，工具链单独留下来了）：
 
 ```powershell
-$tc = 'D:\DSH\plugins\dsh-androidforge\toolchain'   # jdk17 / android-sdk / gradle-8.10.2
+$tc = 'D:\DSH\toolchain\android'   # jdk17 / android-sdk / gradle-8.10.2
 $env:JAVA_HOME="$tc\jdk17"; $env:ANDROID_HOME="$tc\android-sdk"; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 $env:GRADLE_USER_HOME="$tc\gradle-home"; $env:ANDROID_USER_HOME="$tc\android-user"
 $env:TEMP="$tc\tmp"; $env:TMP=$env:TEMP          # 必须，否则 gradle/adb 起不来
@@ -326,7 +327,7 @@ docs/DESIGN.md        设计说明（为什么不用 proot/patchelf/JTAG 等）
 
 ```powershell
 $env:TEMP='D:\DSH\espstudio\.adbtmp'; $env:TMP=$env:TEMP
-$adb='D:\DSH\plugins\dsh-androidforge\toolchain\android-sdk\platform-tools\adb.exe'
+$adb='D:\DSH\toolchain\android\android-sdk\platform-tools\adb.exe'
 
 & $adb devices
 & $adb install -r app\build\outputs\apk\debug\app-debug.apk
